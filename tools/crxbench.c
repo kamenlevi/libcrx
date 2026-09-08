@@ -29,24 +29,27 @@ int main(int argc, char **argv)
     for (int i = 0; i < nfiles; i++) {
         size_t len; uint8_t *bytes = read_file(argv[a + i], &len);
         if (!bytes) { skipped++; continue; }
-        int ok = 1; uint32_t w = 0, h = 0;
+        int ok = 1; uint32_t w = 0, h = 0; double t_open = 0, t_dec = 0, t_close = 0;
         for (int r = 0; r < reps && ok; r++) {
             double t = now_ms();
             crx_decoder *d = NULL;
             if (crx_open(bytes, len, &d) != CRX_OK) { ok = 0; break; }
+            double t1 = now_ms();
             size_t n = crx_output_size(d, level, &w, &h);
             if (!n) { ok = 0; crx_close(d); break; }
             if (n > bufcap) { bufcap = n; buf = realloc(buf, n * sizeof *buf); }
             if (crx_decode(d, level, buf, w, threads) != CRX_OK) ok = 0;
+            double t2 = now_ms();
             crx_close(d);
             times[r] = now_ms() - t;
+            t_open += t1 - t; t_dec += t2 - t1; t_close += times[r] - (t2 - t);
         }
         free(bytes);
         if (!ok) { skipped++; if (verbose) printf("skip %s\n", argv[a + i]); continue; }
         qsort(times, reps, sizeof *times, cmp_double);
         med[done] = times[reps / 2];
         mpix_total += (double)w * h / 1e6; ms_total += med[done];
-        if (verbose) printf("%8.2f ms  %ux%u  %s\n", med[done], w, h, argv[a + i]);
+        if (verbose) printf("%8.2f ms  (open %.2f decode %.2f close %.2f)  %ux%u  %s\n", med[done], t_open / reps, t_dec / reps, t_close / reps, w, h, argv[a + i]);
         done++;
     }
     if (!done) { printf("crxbench: nothing decoded (%d files skipped)\n", skipped); return 1; }

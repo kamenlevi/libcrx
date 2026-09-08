@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "crx_internal.h"
+#include "pool.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -64,7 +65,7 @@ void crx_close(crx_decoder *d)
     free(d->tiles);
     free(d->plane_storage);
     free(d->scratch);
-    free(d);
+    free(d);                              /* the pool is shared, never destroyed here */
 }
 
 const char *crx_strerror(crx_status s)

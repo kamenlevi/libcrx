@@ -45,9 +45,9 @@ size_t crx_stage_tmp_size(uint32_t m_w, uint32_t rows_l, uint32_t rows_h)
  * columns of a row at once). A: rows_l low rows, B: rows_h high rows (B[0]
  * is the seam extra when `top`), both m_w wide; out: m_h rows. */
 static void vertical(const int32_t *A, uint32_t rows_l, const int32_t *B, uint32_t rows_h, bool top, bool bottom,
-                     int32_t *out, uint32_t m_w, uint32_t m_h, size_t so, int32_t *xm)
+                     int32_t *out, uint32_t m_w, uint32_t m_h, size_t so, int32_t *xm, uint32_t c0, uint32_t c1)
 {
-    if (m_h == 1) { memcpy(out, A, m_w * sizeof *A); return; }
+    if (m_h == 1) { memcpy(out + c0, A + c0, (c1 - c0) * sizeof *A); return; }
     const int32_t *Bh = B + (top ? (size_t)m_w : 0);      /* own high rows */
     uint32_t nbh = rows_h - (top ? 1 : 0);
     uint32_t ne = (m_h + 1) / 2, no = m_h / 2;
@@ -55,25 +55,25 @@ static void vertical(const int32_t *A, uint32_t rows_l, const int32_t *B, uint32
     {
         const int32_t *hp = top ? B : Bh;                 /* row "-1" */
         const int32_t *hc = Bh, *lc = A; int32_t *o = out;
-        for (uint32_t c = 0; c < m_w; c++) o[c] = lc[c] - ((hp[c] + hc[c] + 2) >> 2);
+        for (uint32_t c = c0; c < c1; c++) o[c] = lc[c] - ((hp[c] + hc[c] + 2) >> 2);
     }
     uint32_t ilim = ne < nbh ? ne : nbh;
     for (uint32_t i = 1; i < ilim; i++) {
         const int32_t *hp = Bh + (size_t)(i - 1) * m_w, *hc = hp + m_w, *lc = A + (size_t)i * m_w;
         int32_t *o = out + (size_t)(2 * i) * so;
-        for (uint32_t c = 0; c < m_w; c++) o[c] = lc[c] - ((hp[c] + hc[c] + 2) >> 2);
+        for (uint32_t c = c0; c < c1; c++) o[c] = lc[c] - ((hp[c] + hc[c] + 2) >> 2);
     }
     for (uint32_t i = ilim; i < ne; i++) {
         const int32_t *hp = Bh + (size_t)(i - 1) * m_w, *hc = Bh + (size_t)(nbh - 1) * m_w, *lc = A + (size_t)i * m_w;
         int32_t *o = out + (size_t)(2 * i) * so;
-        for (uint32_t c = 0; c < m_w; c++) o[c] = lc[c] - ((hp[c] + hc[c] + 2) >> 2);
+        for (uint32_t c = c0; c < c1; c++) o[c] = lc[c] - ((hp[c] + hc[c] + 2) >> 2);
     }
     /* row m_h (beyond), when m_h is even */
     const int32_t *beyond = NULL;
     if (!(m_h & 1)) {
         if (bottom && rows_l > m_h / 2 && nbh > m_h / 2) {
             const int32_t *hp = Bh + (size_t)(m_h / 2 - 1) * m_w, *hc = hp + m_w, *lc = A + (size_t)(m_h / 2) * m_w;
-            for (uint32_t c = 0; c < m_w; c++) xm[c] = lc[c] - ((hp[c] + hc[c] + 2) >> 2);
+            for (uint32_t c = c0; c < c1; c++) xm[c] = lc[c] - ((hp[c] + hc[c] + 2) >> 2);
             beyond = xm;
         } else beyond = out + (size_t)(m_h - 2) * so;
     }
@@ -82,12 +82,12 @@ static void vertical(const int32_t *A, uint32_t rows_l, const int32_t *B, uint32
     for (uint32_t i = 0; i < olim; i++) {
         const int32_t *hc = Bh + (size_t)i * m_w, *ea = out + (size_t)(2 * i) * so, *eb = ea + 2 * so;
         int32_t *o = out + (size_t)(2 * i + 1) * so;
-        for (uint32_t c = 0; c < m_w; c++) o[c] = hc[c] + ((ea[c] + eb[c]) >> 1);
+        for (uint32_t c = c0; c < c1; c++) o[c] = hc[c] + ((ea[c] + eb[c]) >> 1);
     }
     if (!(m_h & 1)) {
         const int32_t *hc = Bh + (size_t)(no - 1) * m_w, *ea = out + (size_t)(m_h - 2) * so;
         int32_t *o = out + (size_t)(m_h - 1) * so;
-        for (uint32_t c = 0; c < m_w; c++) o[c] = hc[c] + ((ea[c] + beyond[c]) >> 1);
+        for (uint32_t c = c0; c < c1; c++) o[c] = hc[c] + ((ea[c] + beyond[c]) >> 1);
     }
 }
 
@@ -105,5 +105,20 @@ void crx_synth_stage(const int32_t *ll, uint32_t wl, uint32_t hl, size_t sll,
         crx_synth_line(ll + r * sll, wl, hlb + r * shl, whl, left, right, A + (size_t)r * m_w, m_w);
     for (uint32_t r = 0; r < rows_h; r++)
         crx_synth_line(lhb + r * slh, wlh, hhb + r * shh, whh, left, right, B + (size_t)r * m_w, m_w);
-    vertical(A, rows_l, B, rows_h, top, bottom, out, m_w, m_h, so, xm);
+    vertical(A, rows_l, B, rows_h, top, bottom, out, m_w, m_h, so, xm, 0, m_w);
+}
+
+void crx_stage_rows(const crx_stage *s, uint32_t r0, uint32_t r1)
+{
+    int32_t *A = s->tmp, *B = s->tmp + (size_t)s->m_w * s->hl;
+    for (uint32_t r = r0; r < r1; r++) {
+        if (r < s->hl) crx_synth_line(s->ll + r * s->sll, s->wl, s->hlb + r * s->shl, s->whl, s->left, s->right, A + (size_t)r * s->m_w, s->m_w);
+        else { uint32_t q = r - s->hl; crx_synth_line(s->lhb + q * s->slh, s->wlh, s->hhb + q * s->shh, s->whh, s->left, s->right, B + (size_t)q * s->m_w, s->m_w); }
+    }
+}
+
+void crx_stage_cols(const crx_stage *s, uint32_t c0, uint32_t c1)
+{
+    int32_t *A = s->tmp, *B = s->tmp + (size_t)s->m_w * s->hl, *xm = B + (size_t)s->m_w * s->hlh;
+    vertical(A, s->hl, B, s->hlh, s->top, s->bottom, s->out, s->m_w, s->m_h, s->so, xm, c0, c1);
 }

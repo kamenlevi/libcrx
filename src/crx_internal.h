@@ -55,6 +55,7 @@ struct crx_decoder {
     int32_t *scratch;                     /* line-decoder memory, nplanes x scratch_per_plane int32 */
     size_t scratch_per_plane;
     uint64_t overrun_bits;                /* bits read past band data in the last decode */
+    struct crx_pool *pool;
 };
 crx_status crx_decode_impl(crx_decoder *d, unsigned level, uint16_t *dst, size_t stride, unsigned threads);
 /* Diagnostics for tests and crxcheck -p: one tile plane at `level`, unclamped,

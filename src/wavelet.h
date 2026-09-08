@@ -22,4 +22,19 @@ void crx_synth_stage(const int32_t *ll, uint32_t wl, uint32_t hl, size_t sll,
                      const int32_t *hhb, uint32_t whh, uint32_t hhh, size_t shh,
                      bool left, bool right, bool top, bool bottom,
                      int32_t *out, uint32_t m_w, uint32_t m_h, size_t so, int32_t *tmp);
+
+/* Split form of crx_synth_stage for parallel execution: the same inputs,
+ * horizontal pass over a range of A/B rows (index space: rows_l A rows then
+ * rows_h B rows), then vertical pass over a column range. tmp as before. */
+typedef struct crx_stage {
+    const int32_t *ll; uint32_t wl, hl; size_t sll;
+    const int32_t *hlb; uint32_t whl, hhl; size_t shl;
+    const int32_t *lhb; uint32_t wlh, hlh; size_t slh;
+    const int32_t *hhb; uint32_t whh, hhh; size_t shh;
+    bool left, right, top, bottom;
+    int32_t *out; uint32_t m_w, m_h; size_t so;
+    int32_t *tmp;
+} crx_stage;
+void crx_stage_rows(const crx_stage *s, uint32_t r0, uint32_t r1);   /* r in [0, hl + hlh) */
+void crx_stage_cols(const crx_stage *s, uint32_t c0, uint32_t c1);   /* c in [0, m_w) */
 #endif

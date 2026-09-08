@@ -4,6 +4,8 @@
 #include "lines.h"
 #include "qp.h"
 #include "wavelet.h"
+#include "pool.h"
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -174,10 +176,181 @@ static crx_status decode_lossy_plane(crx_decoder *d, const crx_tile *t, uint32_t
     return s;
 }
 
+static crx_status tile_qmap(crx_decoder *d, const crx_tile *t, crx_qmap *qm, uint32_t **qmem);
+
+/* ---- Parallel lossy pipeline -------------------------------------------------
+ * Phase 1: every needed (tile, plane, band) decodes independently.
+ * Phase 2: per level, horizontal pass tasks (tile, plane, row block), then
+ *          vertical pass tasks (tile, plane, column block).
+ * Phase 3: emit tasks (tile, plane, row block). */
+
+typedef struct pp_plane {
+    const crx_tile *t; uint32_t ti, pi; const crx_qmap *qm;
+    int32_t *bands[CRX_MAX_BANDS]; int32_t *linemem[CRX_MAX_BANDS];
+    int32_t *outs[CRX_MAX_LEVELS + 1]; size_t out_w[CRX_MAX_LEVELS + 1], out_h[CRX_MAX_LEVELS + 1];
+    int32_t *tmp; size_t tmp_sz;
+    crx_stage st;                       /* current stage */
+    const int32_t *final; uint32_t final_w, final_h; size_t final_s;
+    uint32_t px, py;                    /* plane position at the output level */
+    atomic_int status;
+    uint64_t overrun;
+} pp_plane;
+
+typedef struct pp_ctx {
+    crx_decoder *d; unsigned level; uint16_t *dst; size_t stride;
+    pp_plane *pl; uint32_t nplanes;
+    /* task tables */
+    uint32_t *band_task;                /* phase 1: (plane index << 4) | band */
+    uint32_t nband_tasks;
+    uint32_t rows_per, cols_per;
+    uint32_t *blk_plane, *blk_start, *blk_end; uint32_t nblk;    /* phase 2/3 blocks */
+} pp_ctx;
+
+static void task_band(void *vctx, uint32_t i)
+{
+    pp_ctx *c = vctx; uint32_t code = c->band_task[i]; pp_plane *P = &c->pl[code >> 4]; unsigned k = code & 15;
+    const crx_plane *pl = &P->t->planes[P->pi]; const crx_band *b = &pl->bands[k];
+    unsigned N = c->d->levels, lvl = k == 0 ? N : N - (k - 1) / 3;
+    crx_decoder tmpd = *c->d; tmpd.overrun_bits = 0;           /* private overrun accumulator */
+    crx_status s = decode_band(&tmpd, b, k == 0 && pl->partial, lvl, P->qm, P->bands[k], P->linemem[k]);
+    __atomic_fetch_add(&P->overrun, tmpd.overrun_bits, __ATOMIC_RELAXED);
+    if (s != CRX_OK) atomic_store(&P->status, (int)s);
+}
+
+static void task_rows(void *vctx, uint32_t i) { pp_ctx *c = vctx; pp_plane *P = &c->pl[c->blk_plane[i]]; crx_stage_rows(&P->st, c->blk_start[i], c->blk_end[i]); }
+static void task_cols(void *vctx, uint32_t i) { pp_ctx *c = vctx; pp_plane *P = &c->pl[c->blk_plane[i]]; crx_stage_cols(&P->st, c->blk_start[i], c->blk_end[i]); }
+static void task_emit(void *vctx, uint32_t i)
+{
+    pp_ctx *c = vctx; pp_plane *P = &c->pl[c->blk_plane[i]];
+    uint32_t y0 = c->blk_start[i], y1 = c->blk_end[i];
+    emit_plane(c->d, P->pi, P->final + (size_t)y0 * P->final_s, P->final_s, P->final_w, y1 - y0, P->px, P->py + y0, c->dst, c->stride);
+}
+
+/* Build blocks of [start, end) over `total` per plane, `per` each. */
+static uint32_t make_blocks(pp_ctx *c, uint32_t (*total)(const pp_plane *, void *), void *arg, uint32_t per)
+{
+    uint32_t n = 0;
+    for (uint32_t p = 0; p < c->nplanes; p++) {
+        uint32_t tot = total(&c->pl[p], arg);
+        for (uint32_t s0 = 0; s0 < tot; s0 += per) {
+            c->blk_plane[n] = p; c->blk_start[n] = s0; c->blk_end[n] = s0 + per < tot ? s0 + per : tot; n++;
+        }
+    }
+    return c->nblk = n;
+}
+static uint32_t tot_rows(const pp_plane *P, void *arg) { (void)arg; return P->st.hl + P->st.hlh; }
+static uint32_t tot_cols(const pp_plane *P, void *arg) { (void)arg; return P->st.m_w; }
+static uint32_t tot_emit(const pp_plane *P, void *arg) { (void)arg; return P->final_h; }
+
+static crx_status decode_lossy_all(crx_decoder *d, unsigned level, uint16_t *dst, size_t stride)
+{
+    unsigned N = d->levels;
+    uint32_t ntiles = d->tiles_x * d->tiles_y, nplanes = ntiles * d->nplanes;
+    pp_ctx c = { d, level, dst, stride, NULL, nplanes, NULL, 0, 64, 512, NULL, NULL, NULL, 0 };
+    c.pl = calloc(nplanes, sizeof *c.pl);
+    if (!c.pl) return CRX_E_NOMEM;
+    crx_status s = CRX_OK;
+    TRACE_INIT();
+    double T0 = trace_on ? now_ms() : 0;
+    /* QP maps per tile */
+    crx_qmap *qms = calloc(ntiles, sizeof *qms); uint32_t **qmem = calloc(ntiles, sizeof *qmem);
+    if (!qms || !qmem) { s = CRX_E_NOMEM; goto out_small; }
+    for (uint32_t ti = 0; ti < ntiles && s == CRX_OK; ti++) s = tile_qmap(d, &d->tiles[ti], &qms[ti], &qmem[ti]);
+    if (s != CRX_OK) goto out_small;
+    /* per-plane workspaces */
+    size_t max_blocks = 0;
+    uint32_t px = 0, py = 0;
+    for (uint32_t ti = 0; ti < ntiles; ti++) {
+        const crx_tile *t = &d->tiles[ti];
+        uint32_t tx = ti % d->tiles_x, ty = ti / d->tiles_x;
+        px = 0; for (uint32_t k = 0; k < tx; k++) px += crx_ceil2n(d->tiles[ty * d->tiles_x + k].w, level);
+        py = 0; for (uint32_t k = 0; k < ty; k++) py += crx_ceil2n(d->tiles[k * d->tiles_x].h, level);
+        for (uint32_t pi = 0; pi < d->nplanes; pi++) {
+            pp_plane *P = &c.pl[ti * d->nplanes + pi];
+            P->t = t; P->ti = ti; P->pi = pi; P->qm = qmem[ti] ? &qms[ti] : NULL; P->px = px; P->py = py;
+            const crx_plane *pl = &t->planes[pi];
+            size_t need = 0;
+            for (unsigned k = 0; k < d->nbands; k++) need += BSIZE(&pl->bands[k]) + 3 * ((size_t)pl->bands[k].width + 2);
+            uint32_t maxw = 0, maxrl = 0, maxrh = 0;
+            for (unsigned L = 1; L <= N; L++) {
+                if (L == 1) { P->out_w[L] = t->w; P->out_h[L] = t->h; }
+                else { const crx_band *hl = &pl->bands[3 * (N - (L - 1)) + 1]; P->out_w[L] = hl[1].width; P->out_h[L] = hl[0].height; }
+                if (L > level) need += P->out_w[L] * P->out_h[L];
+                const crx_band *hl = &pl->bands[3 * (N - L) + 1];
+                if (hl[0].height > maxrl) maxrl = hl[0].height;
+                if (hl[1].height > maxrh) maxrh = hl[1].height;
+                if (P->out_w[L] > maxw) maxw = (uint32_t)P->out_w[L];
+            }
+            P->tmp_sz = crx_stage_tmp_size(maxw, maxrl, maxrh); need += P->tmp_sz;
+            int32_t *ws = crx_ws_get(need * sizeof *ws), *p = ws;
+            if (!ws) { s = CRX_E_NOMEM; break; }
+            P->bands[0] = ws;                                     /* keep the base pointer for free() */
+            for (unsigned k = 0; k < d->nbands; k++) { P->bands[k] = p; p += BSIZE(&pl->bands[k]); P->linemem[k] = p; p += 3 * ((size_t)pl->bands[k].width + 2); }
+            for (unsigned L = 1; L <= N; L++) if (L > level) { P->outs[L] = p; p += P->out_w[L] * P->out_h[L]; }
+            P->tmp = p;
+            size_t blocks = (t->h + maxrl + maxrh) / c.rows_per + (maxw / c.cols_per) + 4;
+            if (blocks > max_blocks) max_blocks = blocks;
+        }
+        if (s != CRX_OK) break;
+    }
+    if (s != CRX_OK) goto out;
+    c.band_task = malloc((size_t)nplanes * d->nbands * sizeof *c.band_task);
+    c.blk_plane = malloc(max_blocks * nplanes * sizeof *c.blk_plane);
+    c.blk_start = malloc(max_blocks * nplanes * sizeof *c.blk_start);
+    c.blk_end = malloc(max_blocks * nplanes * sizeof *c.blk_end);
+    if (!c.band_task || !c.blk_plane || !c.blk_start || !c.blk_end) { s = CRX_E_NOMEM; goto out; }
+    /* Phase 1: bands, largest first so the long ones start early. */
+    c.nband_tasks = 0;
+    for (unsigned k = d->nbands; k-- > 0;) {
+        unsigned lvl = k == 0 ? N : N - (k - 1) / 3;
+        if (lvl <= level) continue;
+        for (uint32_t p = 0; p < nplanes; p++) c.band_task[c.nband_tasks++] = (p << 4) | k;
+    }
+    if (trace_on) { double T1 = now_ms(); fprintf(stderr, "setup+qmaps %.2f ms\n", T1 - T0); T0 = T1; }
+    crx_pool_run(d->pool, c.nband_tasks, task_band, &c);
+    if (trace_on) { double T1 = now_ms(); fprintf(stderr, "phase 1 bands (%u tasks) %.2f ms\n", c.nband_tasks, T1 - T0); T0 = T1; }
+    for (uint32_t p = 0; p < nplanes; p++) { int st = atomic_load(&c.pl[p].status); if (st) { s = (crx_status)st; goto out; } d->overrun_bits += c.pl[p].overrun; }
+    /* Phase 2: stages from level N down to level + 1 */
+    for (uint32_t p = 0; p < nplanes; p++) {
+        pp_plane *P = &c.pl[p]; const crx_plane *pl = &P->t->planes[P->pi];
+        P->final = BROW(P->bands[0], &pl->bands[0], 0); P->final_w = pl->bands[0].width; P->final_h = pl->bands[0].height; P->final_s = BSTRIDE(&pl->bands[0]);
+    }
+    for (unsigned L = N; L > level; L--) {
+        for (uint32_t p = 0; p < nplanes; p++) {
+            pp_plane *P = &c.pl[p]; const crx_plane *pl = &P->t->planes[P->pi]; const crx_band *hb = &pl->bands[3 * (N - L) + 1];
+            crx_stage *st = &P->st;
+            st->ll = P->final; st->wl = P->final_w; st->hl = P->final_h; st->sll = P->final_s;
+            st->hlb = BROW(P->bands[3 * (N - L) + 1], &hb[0], 0); st->whl = hb[0].width; st->hhl = hb[0].height; st->shl = BSTRIDE(&hb[0]);
+            st->lhb = BROW(P->bands[3 * (N - L) + 2], &hb[1], 0); st->wlh = hb[1].width; st->hlh = hb[1].height; st->slh = BSTRIDE(&hb[1]);
+            st->hhb = BROW(P->bands[3 * (N - L) + 3], &hb[2], 0); st->whh = hb[2].width; st->hhh = hb[2].height; st->shh = BSTRIDE(&hb[2]);
+            st->left = P->t->flags & CRX_LEFT; st->right = P->t->flags & CRX_RIGHT; st->top = P->t->flags & CRX_TOP; st->bottom = P->t->flags & CRX_BOTTOM;
+            st->out = P->outs[L]; st->m_w = (uint32_t)P->out_w[L]; st->m_h = (uint32_t)P->out_h[L]; st->so = P->out_w[L]; st->tmp = P->tmp;
+        }
+        make_blocks(&c, tot_rows, NULL, c.rows_per); crx_pool_run(d->pool, c.nblk, task_rows, &c);
+        if (trace_on) { double T1 = now_ms(); fprintf(stderr, "stage %u rows (%u tasks) %.2f ms\n", L, c.nblk, T1 - T0); T0 = T1; }
+        make_blocks(&c, tot_cols, NULL, c.cols_per); crx_pool_run(d->pool, c.nblk, task_cols, &c);
+        if (trace_on) { double T1 = now_ms(); fprintf(stderr, "stage %u cols (%u tasks) %.2f ms\n", L, c.nblk, T1 - T0); T0 = T1; }
+        for (uint32_t p = 0; p < nplanes; p++) { pp_plane *P = &c.pl[p]; P->final = P->outs[L]; P->final_w = (uint32_t)P->out_w[L]; P->final_h = (uint32_t)P->out_h[L]; P->final_s = P->out_w[L]; }
+    }
+    /* Phase 3: emit the own area */
+    for (uint32_t p = 0; p < nplanes; p++) { pp_plane *P = &c.pl[p]; P->final_w = crx_ceil2n(P->t->w, level); P->final_h = crx_ceil2n(P->t->h, level); }
+    make_blocks(&c, tot_emit, NULL, c.rows_per); crx_pool_run(d->pool, c.nblk, task_emit, &c);
+    if (trace_on) { double T1 = now_ms(); fprintf(stderr, "emit (%u tasks) %.2f ms\n", c.nblk, T1 - T0); T0 = T1; }
+out:
+    for (uint32_t p = 0; p < nplanes; p++) crx_ws_put(c.pl[p].bands[0]);
+    free(c.band_task); free(c.blk_plane); free(c.blk_start); free(c.blk_end);
+out_small:
+    if (qmem) for (uint32_t ti = 0; ti < ntiles; ti++) free(qmem[ti]);
+    free(qms); free(qmem); free(c.pl);
+    return s;
+}
+
 crx_status crx_decode_impl(crx_decoder *d, unsigned level, uint16_t *dst, size_t stride, unsigned threads)
 {
-    (void)threads;
     d->overrun_bits = 0;
+    if (threads == 0) threads = 1;
+    d->pool = crx_pool_shared(threads);
+    if (!d->pool) return CRX_E_NOMEM;
     if (d->levels == 0) {
         if (level != 0) return CRX_E_ARG;
         for (uint32_t ti = 0; ti < d->tiles_x * d->tiles_y; ti++)
@@ -187,32 +360,7 @@ crx_status crx_decode_impl(crx_decoder *d, unsigned level, uint16_t *dst, size_t
             }
         return CRX_OK;
     }
-    uint32_t py = 0;
-    for (uint32_t ty = 0; ty < d->tiles_y; ty++) {
-        uint32_t px = 0, th = 0;
-        for (uint32_t tx = 0; tx < d->tiles_x; tx++) {
-            crx_tile *t = &d->tiles[ty * d->tiles_x + tx];
-            crx_qmap qm, *qmp = NULL; uint32_t *qmem = NULL;
-            if (d->version == 0x200) {
-                if (t->qp_size == 0) return CRX_E_UNSUPPORTED;
-                if (t->data_off + t->qp_size > d->len) return CRX_E_TRUNCATED;
-                qmem = malloc(crx_qmap_mem_size(t->w, t->h) * sizeof *qmem);
-                if (!qmem) return CRX_E_NOMEM;
-                uint32_t over = 0;
-                if (!crx_qmap_decode(d->bytes + t->data_off, t->qp_size, t->w, t->h, d->levels, &qm, qmem, &over)) { free(qmem); return CRX_E_CORRUPT; }
-                d->overrun_bits += over;
-                qmp = &qm;
-            }
-            for (uint32_t pi = 0; pi < d->nplanes; pi++) {
-                crx_status s = decode_lossy_plane(d, t, pi, qmp, level, px, py, dst, stride, NULL, 0, NULL, NULL, NULL);
-                if (s != CRX_OK) { free(qmem); return s; }
-            }
-            free(qmem);
-            px += crx_ceil2n(t->w, level); th = crx_ceil2n(t->h, level);
-        }
-        py += th;
-    }
-    return CRX_OK;
+    return decode_lossy_all(d, level, dst, stride);
 }
 
 static crx_status tile_qmap(crx_decoder *d, const crx_tile *t, crx_qmap *qm, uint32_t **qmem)
