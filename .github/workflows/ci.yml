@@ -1,0 +1,23 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm]
+        sanitize: [OFF, ON]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: LibRaw for crxoracle (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libraw-dev pkg-config
+      - name: configure
+        run: cmake -S . -B build -DCRX_SANITIZE=${{ matrix.sanitize }}
+      - name: build
+        run: cmake --build build -j
+      - name: unit tests
+        run: ctest --test-dir build --output-on-failure
+      - name: report arch
+        run: uname -m && ./build/crxbench 2>&1 | head -1 || true

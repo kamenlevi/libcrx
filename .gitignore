@@ -1,0 +1,6 @@
+build/
+build-*/
+corpus/private/
+*.cr3
+*.CR3
+.DS_Store
