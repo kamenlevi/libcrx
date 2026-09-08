@@ -10,13 +10,18 @@ static const uint8_t cfa_names[4][4] = { {0,1,1,2}, {1,0,2,1}, {1,2,0,1}, {2,1,1
 
 crx_status crx_open(const void *bytes, size_t len, crx_decoder **out)
 {
+    return crx_open_track(bytes, len, CRX_TRACK_MAIN, out);
+}
+
+crx_status crx_open_track(const void *bytes, size_t len, crx_track which, crx_decoder **out)
+{
     if (!bytes || !out) return CRX_E_ARG;
     *out = NULL;
     crx_decoder *d = calloc(1, sizeof *d);
     if (!d) return CRX_E_NOMEM;
     d->bytes = bytes; d->len = len;
-    const uint8_t *cmp1; size_t cmp1_len; uint32_t track;
-    crx_status s = crx_find_image_track(d->bytes, len, &d->sample_off, &d->sample_size, &cmp1, &cmp1_len, &track);
+    const uint8_t *cmp1, *iad1; size_t cmp1_len, iad1_len; uint32_t track;
+    crx_status s = crx_find_image_track(d->bytes, len, which == CRX_TRACK_PREVIEW, &d->sample_off, &d->sample_size, &cmp1, &cmp1_len, &iad1, &iad1_len, &track);
     if (s == CRX_OK) s = crx_parse_cmp1(d, cmp1, cmp1_len);
     if (s == CRX_OK) s = crx_parse_codestream(d);
     if (s == CRX_OK) {
@@ -32,6 +37,16 @@ crx_status crx_open(const void *bytes, size_t len, crx_decoder **out)
     d->info.tiles_x = d->tiles_x; d->info.tiles_y = d->tiles_y;
     memcpy(d->info.cfa, cfa_names[d->cfa], 4);
     d->info.track = track;
+    /* IAD1 (SPEC 2, Clevy): u16 fields; the 0x38-byte form has crop at 6..9 and active area at 18..21
+     * as inclusive edges; the 0x28-byte form (small track) has a crop at 6..9 only. */
+    if (iad1 && iad1_len >= 20) {
+        uint32_t l = crx_rd16(iad1 + 12), t = crx_rd16(iad1 + 14), r = crx_rd16(iad1 + 16), b = crx_rd16(iad1 + 18);
+        if (r >= l && b >= t && r < d->W && b < d->H) { d->info.crop[0] = l; d->info.crop[1] = t; d->info.crop[2] = r - l + 1; d->info.crop[3] = b - t + 1; }
+    }
+    if (iad1 && iad1_len >= 44) {
+        uint32_t l = crx_rd16(iad1 + 36), t = crx_rd16(iad1 + 38), r = crx_rd16(iad1 + 40), b = crx_rd16(iad1 + 42);
+        if (r >= l && b >= t && r < d->W && b < d->H) { d->info.active[0] = l; d->info.active[1] = t; d->info.active[2] = r - l + 1; d->info.active[3] = b - t + 1; }
+    }
     *out = d;
     return CRX_OK;
 }

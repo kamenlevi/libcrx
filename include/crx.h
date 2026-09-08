@@ -38,14 +38,27 @@ typedef struct crx_info {
     uint32_t tiles_x;
     uint32_t tiles_y;
     uint8_t  cfa[4];     /* CFA pattern of the 2x2 cell, row-major: 0 R, 1 G, 2 B */
-    uint32_t track;      /* which CR3 track carried the image (0 = the full-size raw) */
+    uint32_t track;      /* index of the CR3 track that carried the image */
+    /* Rectangles Canon writes in the IAD1 box, in level-0 mosaic pixels, as
+     * x, y, width, height. `active` is the sensor area with image data;
+     * `crop` is the recommended crop (the camera's advertised size). Both
+     * are zero when the box is absent (small preview tracks carry a shorter
+     * box with only the crop). LibRaw's margins differ from `active` by up
+     * to two pixels; they come from a different tag. */
+    uint32_t active[4];
+    uint32_t crop[4];
 } crx_info;
+
+typedef enum crx_track { CRX_TRACK_MAIN = 0, CRX_TRACK_PREVIEW = 1 } crx_track;
 
 typedef struct crx_decoder crx_decoder;
 
 /* Parse the container and every CRX header. Does not decode pixels.
  * The bytes must stay valid until crx_close. */
 crx_status crx_open(const void *bytes, size_t len, crx_decoder **out);
+/* The same, choosing the largest CRX track (main) or the smallest (the
+ * 1624x1080-class preview many bodies write, itself a CRX image). */
+crx_status crx_open_track(const void *bytes, size_t len, crx_track which, crx_decoder **out);
 
 const crx_info *crx_get_info(const crx_decoder *d);
 

@@ -68,8 +68,8 @@ crx_status crx_decode_plane_ext(crx_decoder *d, unsigned level, uint32_t tile, u
 crx_status crx_decode_band_ext(crx_decoder *d, uint32_t tile, uint32_t plane, unsigned k, int32_t **buf);
 
 /* container.c */
-crx_status crx_find_image_track(const uint8_t *buf, size_t len, uint64_t *sample_off, uint64_t *sample_size,
-                                const uint8_t **cmp1, size_t *cmp1_len, uint32_t *track);
+crx_status crx_find_image_track(const uint8_t *buf, size_t len, int want_smallest, uint64_t *sample_off, uint64_t *sample_size,
+                                const uint8_t **cmp1, size_t *cmp1_len, const uint8_t **iad1, size_t *iad1_len, uint32_t *track);
 /* headers.c */
 crx_status crx_parse_cmp1(crx_decoder *d, const uint8_t *cmp1, size_t cmp1_len);
 crx_status crx_parse_codestream(crx_decoder *d);

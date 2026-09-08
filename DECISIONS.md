@@ -2,6 +2,12 @@
 
 Dated, newest first. A decision stays until a later entry replaces it.
 
+- **2026-09-09 · Memory.** The plan asked for under 2x the output in
+  flight. The parallel design keeps every needed band in memory (they are
+  independent streams decoded concurrently) plus one intermediate band per
+  plane; measured 136 MB for a 51 MB output, 2.7x. Accepted for now: the
+  alternative, a rolling window, serialises each plane and costs the speed
+  target. Open for later: int16 storage for bands whose values provably fit.
 - **2026-09-09 · Partial decode is defined per tile, in the tile's frame.**
   Not as the analysis of the whole plane: with two tiles the pyramids are
   phase-shifted at any level where a tile width is odd, and lossy

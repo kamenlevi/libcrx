@@ -4,10 +4,13 @@ A decoder for Canon's CRX raw codec, the sensor data inside CR3 files.
 Written from the format up, in C11, with no dependencies. Output is the
 sensor values, exact; demosaic and colour are the caller's business.
 
-Status: milestone 3. Headers of every corpus file parse; every lossless
-public sample decodes bit-exact (38 files, 20 camera bodies). Lossy
-C-RAW is milestone 4. See `docs/PLAN.md` for the milestones and `SPEC.md`
-for the format as we derive it.
+Status: milestone 6. Every file of both corpora (15,290 private, 64
+public; lossless and C-RAW, both codec versions, one and two tiles)
+decodes bit-exact to LibRaw. Partial decodes are defined and verified.
+On an 18-core M5 Pro a 24 MP C-RAW decodes in 19 ms full and 6 ms at half
+size, against LibRaw's 43 ms. See `docs/PLAN.md` for the milestones,
+`SPEC.md` for the format, `docs/DESIGN.md` for the code, `docs/BENCH.md`
+for numbers.
 
 ## Why
 
@@ -20,12 +23,14 @@ allows both. Nobody had written the decoder that does it.
 ## Guarantees
 
 - **Exact.** Every decoded value equals LibRaw's, bit for bit, on the whole
-  corpus (about 15,000 private files plus every public sample), checked on
-  every commit by `crxcheck`.
+  corpus (15,290 private files plus every public sample), checked by
+  `crxcheck` before a milestone closes.
 - **Integer.** No floating point anywhere. Every intermediate has a stated
   bit width.
-- **Half size is defined, not approximated.** A level-N decode equals the LL
-  band of the exact integer wavelet analysis of the full decode, N times.
+- **Half size is defined, not approximated.** A level-n decode is the
+  low-pass band of the exact integer wavelet analysis of the full decode,
+  n times, per tile in the tile's own frame (SPEC 10), verified by an
+  independent reference transform.
 - **Clean room.** Written from `SPEC.md`, which is derived from Laurent
   Clévy's CR3 documentation and from observing reference decoders as black
   boxes. Apache-2.0.

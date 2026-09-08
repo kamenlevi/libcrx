@@ -61,10 +61,11 @@ static bool track_sample(const uint8_t *buf, const box_t *stbl, uint64_t *off, u
     return false;
 }
 
-crx_status crx_find_image_track(const uint8_t *buf, size_t len, uint64_t *sample_off, uint64_t *sample_size,
-                                const uint8_t **cmp1, size_t *cmp1_len, uint32_t *track)
+crx_status crx_find_image_track(const uint8_t *buf, size_t len, int want_smallest, uint64_t *sample_off, uint64_t *sample_size,
+                                const uint8_t **cmp1, size_t *cmp1_len, const uint8_t **iad1, size_t *iad1_len, uint32_t *track)
 {
-    box_t ftyp, moov, trak, mdia, minf, stbl, stsd, entry, c;
+    box_t ftyp, moov, trak, mdia, minf, stbl, stsd, entry, c, cdi1, iad;
+    *iad1 = NULL; *iad1_len = 0;
     if (!find_child(buf, 0, len, "ftyp", &ftyp)) return CRX_E_FORMAT;
     if (ftyp.end - ftyp.payload < 4 || memcmp(buf + ftyp.payload, "crx ", 4)) return CRX_E_FORMAT;
     if (!find_child(buf, 0, len, "moov", &moov)) return CRX_E_FORMAT;
@@ -84,10 +85,16 @@ crx_status crx_find_image_track(const uint8_t *buf, size_t len, uint64_t *sample
                 c.end - c.payload >= 52) {
                 uint64_t w = crx_rd32(buf + c.payload + 8), h = crx_rd32(buf + c.payload + 12);
                 uint64_t off, size;
-                if (w * h > best_area && track_sample(buf, &stbl, &off, &size)) {
+                bool better = found ? (want_smallest ? w * h < best_area : w * h > best_area) : true;
+                if (better && track_sample(buf, &stbl, &off, &size)) {
                     best_area = w * h; found = true;
                     *sample_off = off; *sample_size = size;
                     *cmp1 = buf + c.payload; *cmp1_len = c.end - c.payload; *track = index;
+                    *iad1 = NULL; *iad1_len = 0;
+                    if (find_child(buf, entry.payload + 82, entry.end, "CDI1", &cdi1) && cdi1.end - cdi1.payload >= 4 &&
+                        find_child(buf, cdi1.payload + 4, cdi1.end, "IAD1", &iad) && iad.end - iad.payload >= 4) {
+                        *iad1 = buf + iad.payload + 4; *iad1_len = iad.end - iad.payload - 4;
+                    }
                 }
             }
             index++;
