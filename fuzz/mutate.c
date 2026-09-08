@@ -38,7 +38,8 @@ int main(int argc, char **argv)
     int nseeds = argc - a; if (nseeds < 1) { fprintf(stderr, "usage: mutate [-n iters] [-s seed] [-l level] <files>\n"); return 2; }
     uint8_t **seeds = calloc(nseeds, sizeof *seeds); size_t *lens = calloc(nseeds, sizeof *lens);
     for (int i = 0; i < nseeds; i++) { seeds[i] = read_file(argv[a + i], &lens[i]); if (!seeds[i]) { fprintf(stderr, "cannot read %s\n", argv[a + i]); return 2; } }
-    long hist[8] = {0}; long decoded = 0;
+    long hist[8] = {0}; long decoded = 0; double slow_limit = 5.0; int slow_count = 0;
+    const char *slow_dir = getenv("MUTATE_SLOW_DIR");
     uint16_t *out = NULL; size_t outcap = 0;
     double t0 = (double)clock() / CLOCKS_PER_SEC;
     for (long it = 0; it < iterations; it++) {
@@ -59,6 +60,7 @@ int main(int argc, char **argv)
         }
         if (rnd() % 8 == 0) len = rnd() % len;                       /* truncation */
         crx_decoder *d = NULL;
+        double it0 = (double)clock() / CLOCKS_PER_SEC;
         crx_status s = crx_open(buf, len, &d);
         hist[s < 8 ? s : 7]++;
         if (s == CRX_OK) {
@@ -70,6 +72,20 @@ int main(int argc, char **argv)
                 if (r == CRX_OK) decoded++;
             }
             crx_close(d);
+        }
+        double dt = (double)clock() / CLOCKS_PER_SEC - it0;
+        if (dt > slow_limit) {
+            const crx_info *inf = NULL; crx_decoder *dd = NULL;
+            if (crx_open(buf, len, &dd) == CRX_OK) inf = crx_get_info(dd);
+            printf("SLOW %.1f s at iteration %ld seed %d len %zu%s", dt, it, si, len, inf ? "" : "\n");
+            if (inf) printf(" image %ux%u levels %u tiles %ux%u\n", inf->width, inf->height, inf->levels, inf->tiles_x, inf->tiles_y);
+            if (dd) crx_close(dd);
+            if (slow_dir && slow_count < 20) {
+                char path[1024]; snprintf(path, sizeof path, "%s/slow-%ld.cr3", slow_dir, it);
+                FILE *f = fopen(path, "wb"); if (f) { fwrite(buf, 1, len, f); fclose(f); printf("  saved %s\n", path); }
+                slow_count++;
+            }
+            fflush(stdout);
         }
         free(buf);
         if ((it + 1) % 1000 == 0) { printf("%ld iterations, %ld decoded, %.0f s\n", it + 1, decoded, (double)clock() / CLOCKS_PER_SEC - t0); fflush(stdout); }

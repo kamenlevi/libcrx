@@ -9,6 +9,8 @@
  * Exit 0 only when every file with an oracle row decoded exactly. */
 #include "common.h"
 #include "crx.h"
+#include "../src/crx_internal.h"
+#include "../tests/partial_check.h"
 
 typedef struct { char sha[65]; char model[64]; uint32_t rw, rh; char pix[65]; } row_t;
 typedef struct { char *path; char sha[65]; } man_t;
@@ -68,16 +70,17 @@ static int cmp_row(const void *a, const void *b) { return strcmp(((const row_t *
 int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
-    const char *oracle = NULL; int verbose = 0, headers_only = 0; unsigned threads = 1; int a = 1;
+    const char *oracle = NULL; int verbose = 0, headers_only = 0, partial = 0; unsigned threads = 1; int a = 1;
     for (; a < argc && argv[a][0] == '-'; a++) {
         if (!strcmp(argv[a], "-v")) verbose = 1;
         else if (!strcmp(argv[a], "-H")) headers_only = 1;
+        else if (!strcmp(argv[a], "-p")) partial = 1;
         else if (!strcmp(argv[a], "-m") && a + 1 < argc) { if (load_manifest(argv[++a]) < 0) { fprintf(stderr, "cannot read manifest\n"); return 2; } }
         else if (!strcmp(argv[a], "-o") && a + 1 < argc) oracle = argv[++a];
         else if (!strcmp(argv[a], "-t") && a + 1 < argc) threads = (unsigned)atoi(argv[++a]);
         else { fprintf(stderr, "unknown option %s\n", argv[a]); return 2; }
     }
-    if (!oracle || a >= argc) { fprintf(stderr, "usage: crxcheck [-v] [-H] [-t threads] [-m manifest.tsv] -o oracle.tsv <file.cr3>...\n"); return 2; }
+    if (!oracle || a >= argc) { fprintf(stderr, "usage: crxcheck [-v] [-H] [-p] [-t threads] [-m manifest.tsv] -o oracle.tsv <file.cr3>...\n"); return 2; }
     if (load_oracle(oracle) < 0) { fprintf(stderr, "cannot read %s\n", oracle); return 2; }
     qsort(rows, nrows, sizeof *rows, cmp_row);
     if (nman) qsort(man, nman, sizeof *man, cmp_man);
@@ -111,8 +114,12 @@ int main(int argc, char **argv)
         if (s != CRX_OK) { printf("FAIL decode:%s %s %s\n", crx_strerror(s), r->model, argv[a]); fail++; crx_close(d); free(bytes); continue; }
         char ph[65]; sha256_u16le(buf, n, ph);
         if (crx_overrun_bits(d)) { printf("FAIL overrun %llu bits %s %s\n", (unsigned long long)crx_overrun_bits(d), r->model, argv[a]); fail++; crx_close(d); free(bytes); continue; }
-        if (strcmp(ph, r->pix) == 0) { exact++; if (verbose) printf("exact %s %s\n", r->model, argv[a]); }
-        else { printf("FAIL pixels %s %s\n", r->model, argv[a]); fail++; }
+        if (strcmp(ph, r->pix) != 0) { printf("FAIL pixels %s %s\n", r->model, argv[a]); fail++; crx_close(d); free(bytes); continue; }
+        if (partial && crx_get_info(d)->levels > 0) {
+            char msg[128];
+            if (partial_check(d, msg) != 0) { printf("FAIL partial %s %s %s\n", msg, r->model, argv[a]); fail++; crx_close(d); free(bytes); continue; }
+        }
+        exact++; if (verbose) printf("exact %s %s\n", r->model, argv[a]);
         crx_close(d); free(bytes);
     }
     double dt = (now_ms() - t0) / 1e3;

@@ -2,6 +2,12 @@
 
 Dated, newest first. A decision stays until a later entry replaces it.
 
+- **2026-09-09 · Partial decode is defined per tile, in the tile's frame.**
+  Not as the analysis of the whole plane: with two tiles the pyramids are
+  phase-shifted at any level where a tile width is odd, and lossy
+  quantisation makes the two tiles disagree by one rounding unit on the
+  shared neighbour sample. The verifier extends the tile's samples the way
+  the decoder does (virtual sample or stored extra coefficient), SPEC 10.
 - **2026-09-09 · Parallel output goes to separate files.** A parallel hash
   run that shared one stdout paired 57 wrong hashes with paths (lines cut
   at buffer boundaries, and paths in one folder share long prefixes, so the

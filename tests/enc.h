@@ -53,22 +53,22 @@ static void enc_run(ebits *e, unsigned *s, uint32_t t, uint32_t remaining)
 
 typedef struct { ebits e; unsigned k, s; uint32_t width; int32_t *prev, *cur, *kp; uint32_t line; } enc_state;
 
-static void enc_init(enc_state *st, uint32_t width)
+static inline void enc_init(enc_state *st, uint32_t width)
 {
     memset(st, 0, sizeof *st); st->width = width;
     st->prev = (int32_t *)calloc(width + 2, 4) + 1; st->cur = (int32_t *)calloc(width + 2, 4) + 1; st->kp = (int32_t *)calloc(width + 2, 4) + 1;
 }
 
-static int32_t enc_med(int32_t a, int32_t b, int32_t c)
+static inline int32_t enc_med(int32_t a, int32_t b, int32_t c)
 {
     int32_t mx = a > b ? a : b, mn = a < b ? a : b;
     if (c >= mx) return mn;
     if (c <= mn) return mx;
     return a + b - c;
 }
-static int32_t iabs(int32_t v) { return v < 0 ? -v : v; }
+static inline int32_t iabs(int32_t v) { return v < 0 ? -v : v; }
 
-static void enc_sym_ll(enc_state *st, int32_t value, int32_t pred, uint32_t x, int more)
+static inline void enc_sym_ll(enc_state *st, int32_t value, int32_t pred, uint32_t x, int more)
 {
     uint32_t v = zigzag(value - pred);
     enc_code(&st->e, v, st->k, 41, 21);
@@ -77,7 +77,7 @@ static void enc_sym_ll(enc_state *st, int32_t value, int32_t pred, uint32_t x, i
 }
 
 /* Encode one base-band line (SPEC 5.6); `vals` has width entries. */
-static void enc_line_ll(enc_state *st, const int32_t *vals)
+static inline void enc_line_ll(enc_state *st, const int32_t *vals)
 {
     uint32_t w = st->width; int32_t *c = st->cur, *p = st->prev;
     if (st->line == 0) {
@@ -110,7 +110,7 @@ static void enc_line_ll(enc_state *st, const int32_t *vals)
     int32_t *t = st->prev; st->prev = st->cur; st->cur = t; st->line++;
 }
 
-static void enc_sym_hf(enc_state *st, int32_t value, uint32_t x, int shifted, int last)
+static inline void enc_sym_hf(enc_state *st, int32_t value, uint32_t x, int shifted, int last)
 {
     uint32_t v = zigzag(value); if (shifted) v -= 1;
     enc_code(&st->e, v, st->k, 41, 21);
@@ -124,7 +124,7 @@ static void enc_sym_hf(enc_state *st, int32_t value, uint32_t x, int shifted, in
 }
 
 /* Encode one high-pass line (SPEC 5.7). */
-static void enc_line_hf(enc_state *st, const int32_t *vals)
+static inline void enc_line_hf(enc_state *st, const int32_t *vals)
 {
     uint32_t w = st->width; int32_t *c = st->cur, *p = st->prev;
     c[-1] = 0; uint32_t x = 0;

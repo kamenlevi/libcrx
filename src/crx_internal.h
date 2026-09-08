@@ -57,6 +57,14 @@ struct crx_decoder {
     uint64_t overrun_bits;                /* bits read past band data in the last decode */
 };
 crx_status crx_decode_impl(crx_decoder *d, unsigned level, uint16_t *dst, size_t stride, unsigned threads);
+/* Diagnostics for tests and crxcheck -p: one tile plane at `level`, unclamped,
+ * into raw (ceil2n(w) x ceil2n(h), row stride `stride`). */
+crx_status crx_decode_plane_raw(crx_decoder *d, unsigned level, uint32_t tile, uint32_t plane, int32_t *raw, size_t stride);
+/* The same, but the whole stage output including seam extras (and, at level 0,
+ * one virtual sample beyond an even-sized seam edge). Caller frees *buf. */
+crx_status crx_decode_plane_ext(crx_decoder *d, unsigned level, uint32_t tile, uint32_t plane, int32_t **buf, uint32_t *ew, uint32_t *eh);
+/* One dequantised band (geometry in d->tiles[tile].planes[plane].bands[k]). Caller frees *buf. */
+crx_status crx_decode_band_ext(crx_decoder *d, uint32_t tile, uint32_t plane, unsigned k, int32_t **buf);
 
 /* container.c */
 crx_status crx_find_image_track(const uint8_t *buf, size_t len, uint64_t *sample_off, uint64_t *sample_size,

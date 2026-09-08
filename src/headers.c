@@ -57,7 +57,7 @@ crx_status crx_parse_cmp1(crx_decoder *d, const uint8_t *c, size_t n)
     bool ext = (c[32] >> 7) & 1;
 
     if (d->version != 0x100 && d->version != 0x200) return CRX_E_UNSUPPORTED;
-    if (!d->W || !d->H || !d->TW || !d->TH || d->W > 0xFFFF || d->H > 0xFFFF) return CRX_E_CORRUPT;
+    if (!d->W || !d->H || !d->TW || !d->TH || d->W > 0x7FFF || d->H > 0x7FFF) return CRX_E_CORRUPT;
     if (d->TW > d->W || d->TH > d->H || !d->hdr_size) return CRX_E_CORRUPT;
     if (d->levels > CRX_MAX_LEVELS) return CRX_E_CORRUPT;
     /* Scope (SPEC 12): four planes, 14 bits, encoding 0, N = 0 or 3, no ext header, one tile row. */

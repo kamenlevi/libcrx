@@ -588,22 +588,27 @@ x = [9, 11, 12, 10, 12]. Analysis of x returns h = [1, -2], l = [10, 12, 11].
 
 ### 8.2 Two dimensions
 
-Each level: rows first, then columns, or the reverse; the integer lifting
-is separable and the two orders give identical results because each 1-D
-transform is applied to whole lines independently. Reconstruction of one
-level from `LL, HL, LH, HH`:
+Integer lifting is not order-free: because of the floor in each step, a
+rows-then-columns analysis is undone only by a columns-then-rows synthesis
+and vice versa. The format's order, confirmed by every corpus file (and
+contradicted by the unit test when the test tried the other order):
 
-    for each row r:  A[r] = synth_1d(LL[r], HL[r])      the "low" rows (even output rows)
-                     B[r] = synth_1d(LH[r], HH[r])      the "high" rows (odd output rows)
+    encoder analysis:  columns first, then rows
+    decoder synthesis: rows first, then columns
+
+Reconstruction of one level from `LL, HL, LH, HH`:
+
+    for each row r:  A[r] = synth_1d(LL[r], HL[r])      the "low" rows
+                     B[r] = synth_1d(LH[r], HH[r])      the "high" rows
     for each column: X[.][c] = synth_1d(A[.][c], B[.][c])   with the vertical boundary rules
 
 The vertical boundaries follow 8.1 with TOP/BOTTOM neighbours (extra rows).
 Tile rows never exceed 1 in any file, so only mirror rules apply
-vertically; the seam rules are implemented symmetrically anyway and tested
-on synthetic data.
+vertically; the seam rules are implemented symmetrically anyway.
 
 The reference evaluates this in a rolling window of a few rows to save
-memory; the values are the same. libcrx may use any schedule.
+memory; the values are the same. libcrx may use any schedule that keeps
+the row-then-column order of each stage.
 
 ### 8.3 Three levels
 
@@ -614,9 +619,10 @@ memory; the values are the same. libcrx may use any schedule.
 At a seam the intermediate LL2 and LL1 lines are wider than base (section
 4.2, rule "produce"), and the finer stage uses as many of them as it needs.
 
-Test: `test_wavelet` (the 8.1 example; a random 37x23 integer image,
-analysed by the reference transform in `tests/ref_wavelet.c`, synthesised
-by the decoder, compared exactly; the same across a synthetic seam).
+Test: `test_wavelet` (the 8.1 example; random lines of every length 1..70;
+random images analysed columns-then-rows by a reference transform written
+from 8.1 and synthesised by the decoder, exact; a 20-sample line split in
+two seam tiles).
 
 ## 9. From coefficients to sensor values
 
@@ -646,19 +652,40 @@ layouts; clamping at both ends).
 ## 10. Partial decode
 
 `crx_decode(level = n)` for 1 <= n <= N returns the mosaic assembled from
-each plane's `LL_n` as it stands after synthesis has run from level N down
-to level n+1, i.e. before the last n synthesis stages, converted by section
-9 with the same offset and clamp. For n = N it is the dequantised base band
-itself.
+each tile plane's `LL_n` as it stands after synthesis has run from level N
+down to level n+1, i.e. before the last n synthesis stages, converted by
+section 9 with the same offset and clamp. For n = N it is the dequantised
+base band itself.
 
-Definition, in one line: **level-n output = the low-pass band of the exact
-integer 5/3 analysis, applied n times, of the unclamped level-0 plane.**
-This holds by 8.1 (analysis inverts synthesis exactly) and needs no
-approximation. Because the low-pass has unit DC gain the values live on the
-same scale as the pixels, so the offset and clamp of section 9 apply
-unchanged. Clamping happens after the analysis, so a level-n sample can
-differ from what a caller would get by analysing the clamped level-0 image
-at sites that clip; that is the intended definition and the tested one.
+**Definition.** For a tile plane, `LL_n` is the low-pass band of the exact
+integer 5/3 analysis (columns, then rows), applied n times, of the tile's
+unclamped level-0 samples *in the tile's own frame*: the tile's first column
+is an even (low-pass) position, and beyond a seam the analysis is extended
+not by mirroring but by the neighbourhood the decoder itself established:
+
+- on the right of an even-width line, by the one sample the synthesis
+  reconstructs beyond the edge (from the stored extra coefficients);
+- on the right of an odd-width line, and on the left of every line that has
+  a seam there, by the stored extra high-pass coefficient itself, which is
+  exactly the value the analysis would need and cannot compute from the
+  tile's samples.
+
+Because each lifting step is exactly invertible, this `LL_n` is the unique
+band that, synthesised with the stored bands n..1, reproduces the level-0
+output; so the definition, the decoder's intermediate, and the verifier
+agree by construction, and the verifier is an independent computation.
+
+Why not "the analysis of the whole plane"? Two tiles are two pyramids. When
+a tile's width is odd at some level (the EOS R: 1722, 861, 431; the EOS M50:
+1572, 786, 393) the neighbour tile's next level starts on what is an odd
+column in whole-plane numbering, so from that level on the two grids are
+phase-shifted against a whole-plane pyramid. And even where the phases
+agree, the two tiles reconstruct the shared neighbour sample from
+differently quantised coefficients, so a whole-plane analysis of the
+decoded image differs from the stored coefficients by one rounding unit in
+a fraction of the seam rows (measured: 82 of 1183 rows, +-1, EOS M6 Mark
+II). Single-tile files have no seam and the two definitions coincide; the
+corpus verifier checks them in the same way.
 
 Geometry: plane size at level n is `ceil2` applied n times to w and h per
 tile, tiles concatenated; the mosaic is twice that. Seam extras are
@@ -672,9 +699,8 @@ corpus (share of the plane's coded size, mean over 40 R6 Mark II files):
 | level | 1 | 2 | 3 |
 | bytes not read | 61% | 84% | 96% |
 
-Test: `test_partial` (decoder at level 1 and 2 against the reference
-analysis of the decoder's own unclamped level-0 output, on the synthetic
-image; the harness repeats it on real files).
+Test: `test_partial` and `crxcheck -p` (`tests/partial_check.h`): the
+verifier above, per tile, per plane, at every level, on real files.
 
 ## 11. Bit widths and overflow
 
@@ -724,6 +750,6 @@ and are listed in DECISIONS.md as open.
 | test_qp | 7 | planned (M4) |
 | test_wavelet | 8 | planned (M4) |
 | test_output | 9 | covered by crxcheck: every lossless public sample is exact (38 files, 20 bodies, one- and two-tile) |
-| test_partial | 10 | planned (M5) |
+| test_partial, crxcheck -p | 10 (tile-frame verifier, every level, every tile and plane) | done on seam files of both codec versions; corpus run pending |
 | crxcheck on the corpora | all | lossless: 38 of 38 exact; lossy: milestone 4 |
 | mutate (fuzzer) | all, under ASan/UBSan | running from M3 |
