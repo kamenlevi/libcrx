@@ -92,6 +92,16 @@ encoding types 1 and 3, the extended header, N other than 0 or 3, tile rows
 > 1, B other than 14. The decoder returns `CRX_E_UNSUPPORTED` for them
 rather than guessing (section 11).
 
+Beside CMP1 in the same sample entry sits `CDI1`, a full box holding
+`IAD1`: big-endian u16 fields after the 4-byte full-box header. The
+0x38-byte form of the main track: fields 0..1 image size, 6..9 the
+recommended crop as inclusive edges (left, top, right, bottom; the R6 Mark
+II: 168, 108, 6167, 4107 = 6000x4000), 10..17 the two optical-black
+strips, 18..21 the active area (156, 96, 6179, 4117 = 6024x4022). The
+0x28-byte form of the preview track carries only the crop. libcrx reports
+crop and active area in `crx_info`; LibRaw's margins come from the
+makernote sensor-info tag instead and differ by up to two pixels.
+
 Worked example: bytes at offset 24 of the R6 Mark II header are `0e 40 03 00`:
 B = 14, P = 4, layout 0, type 0, N = 3, no extra tile columns.
 
@@ -747,8 +757,8 @@ and are listed in DECISIONS.md as open.
 | test_band_geometry | 4 (the rule against the observed table for widths 22..3999, the worked example) | done |
 | crxcheck -H on the corpora | 1 to 4 on real files | done: 15,307 + 64 files |
 | test_rice | 5.1-5.7 (worked examples bit-exact; random round trips through an encoder written from section 5, both line decoders, escapes, runs) | done |
-| test_qp | 7 | planned (M4) |
-| test_wavelet | 8 | planned (M4) |
+| test_qp | 7 (step table values; QP map round trips through an encoder written from 7.3; level tables) | done |
+| test_wavelet | 8 (8.1 example; all line lengths; random images analysed columns-then-rows; a synthetic seam; strip form == whole stage under every flag combination) | done |
 | test_output | 9 | covered by crxcheck: every lossless public sample is exact (38 files, 20 bodies, one- and two-tile) |
 | test_partial, crxcheck -p | 10 (tile-frame verifier, every level, every tile and plane) | done on seam files of both codec versions; corpus run pending |
 | crxcheck on the corpora | all | lossless: 38 of 38 exact; lossy: milestone 4 |
