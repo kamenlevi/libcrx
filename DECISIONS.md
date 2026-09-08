@@ -2,6 +2,12 @@
 
 Dated, newest first. A decision stays until a later entry replaces it.
 
+- **2026-09-09 · Parallel output goes to separate files.** A parallel hash
+  run that shared one stdout paired 57 wrong hashes with paths (lines cut
+  at buffer boundaries, and paths in one folder share long prefixes, so the
+  splice looked valid). Every parallel tool run now writes one file per job;
+  the manifest was rebuilt (15,290 unique files) and every entry verified
+  against an oracle row.
 - **2026-09-09 · Scope of the first decoder.** Exactly the variants the two
   corpora contain: codec v1 and v2, lossless and three-level lossy, one or
   two tile columns, four planes, 14 bits, encoding type 0, no rounded bits,

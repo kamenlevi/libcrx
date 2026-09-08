@@ -52,7 +52,11 @@ struct crx_decoder {
     uint32_t tiles_x, tiles_y;
     crx_tile *tiles;
     crx_plane *plane_storage;
+    int32_t *scratch;                     /* line-decoder memory, nplanes x scratch_per_plane int32 */
+    size_t scratch_per_plane;
+    uint64_t overrun_bits;                /* bits read past band data in the last decode */
 };
+crx_status crx_decode_impl(crx_decoder *d, unsigned level, uint16_t *dst, size_t stride, unsigned threads);
 
 /* container.c */
 crx_status crx_find_image_track(const uint8_t *buf, size_t len, uint64_t *sample_off, uint64_t *sample_size,

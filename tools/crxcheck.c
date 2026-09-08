@@ -110,6 +110,7 @@ int main(int argc, char **argv)
         if (s == CRX_E_UNSUPPORTED) { if (verbose) printf("unsupported %s %s\n", r->model, argv[a]); unsupported++; crx_close(d); free(bytes); continue; }
         if (s != CRX_OK) { printf("FAIL decode:%s %s %s\n", crx_strerror(s), r->model, argv[a]); fail++; crx_close(d); free(bytes); continue; }
         char ph[65]; sha256_u16le(buf, n, ph);
+        if (crx_overrun_bits(d)) { printf("FAIL overrun %llu bits %s %s\n", (unsigned long long)crx_overrun_bits(d), r->model, argv[a]); fail++; crx_close(d); free(bytes); continue; }
         if (strcmp(ph, r->pix) == 0) { exact++; if (verbose) printf("exact %s %s\n", r->model, argv[a]); }
         else { printf("FAIL pixels %s %s\n", r->model, argv[a]); fail++; }
         crx_close(d); free(bytes);

@@ -18,6 +18,13 @@ crx_status crx_open(const void *bytes, size_t len, crx_decoder **out)
     crx_status s = crx_find_image_track(d->bytes, len, &d->sample_off, &d->sample_size, &cmp1, &cmp1_len, &track);
     if (s == CRX_OK) s = crx_parse_cmp1(d, cmp1, cmp1_len);
     if (s == CRX_OK) s = crx_parse_codestream(d);
+    if (s == CRX_OK) {
+        uint32_t maxw = 0;
+        for (uint32_t i = 0; i < d->tiles_x * d->tiles_y; i++) if (d->tiles[i].w > maxw) maxw = d->tiles[i].w;
+        d->scratch_per_plane = 3 * ((size_t)maxw + 2);
+        d->scratch = malloc(d->scratch_per_plane * d->nplanes * sizeof *d->scratch);
+        if (!d->scratch) s = CRX_E_NOMEM;
+    }
     if (s != CRX_OK) { crx_close(d); return s; }
     d->info.width = d->W; d->info.height = d->H;
     d->info.bits = d->bits; d->info.planes = d->nplanes; d->info.levels = d->levels;
@@ -46,8 +53,9 @@ crx_status crx_decode(crx_decoder *d, unsigned level, uint16_t *dst, size_t stri
 {
     if (!d || !dst) return CRX_E_ARG;
     if (level > d->levels) return CRX_E_ARG;
-    (void)stride; (void)threads;
-    return CRX_E_UNSUPPORTED;      /* milestone 3 */
+    uint32_t w; crx_output_size(d, level, &w, NULL);
+    if (stride < w) return CRX_E_ARG;
+    return crx_decode_impl(d, level, dst, stride, threads);
 }
 
 void crx_close(crx_decoder *d)
@@ -55,6 +63,7 @@ void crx_close(crx_decoder *d)
     if (!d) return;
     free(d->tiles);
     free(d->plane_storage);
+    free(d->scratch);
     free(d);
 }
 
@@ -71,5 +80,7 @@ const char *crx_strerror(crx_status s)
     }
     return "unknown status";
 }
+
+uint64_t crx_overrun_bits(const crx_decoder *d) { return d ? d->overrun_bits : 0; }
 
 const char *crx_version(void) { return CRX_VERSION; }

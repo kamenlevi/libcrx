@@ -64,6 +64,10 @@ crx_status crx_decode(crx_decoder *d, unsigned level, uint16_t *dst, size_t stri
 void crx_close(crx_decoder *d);
 
 const char *crx_strerror(crx_status s);
+
+/* Diagnostics: bits the last crx_decode read beyond the coded data of its
+ * subbands (a conforming file gives 0; the corpus check asserts it). */
+uint64_t crx_overrun_bits(const crx_decoder *d);
 const char *crx_version(void);
 
 #ifdef __cplusplus

@@ -402,15 +402,14 @@ pixel always goes through the MED path.
 (When a != 0 the run test is skipped; when a == 0 and the run bit is 0, n
 is 0 and a symbol follows with prediction 0.)
 
-Worked example: width 4, first line, k = 0, s = 0, bits
-`1 1 0 | 0 1 | 1 | 0 0 1`: a=0 -> run: `1` start n=1, `1` n=2 s=1, `0` stop,
-J[1]=0, s=0 -> run 2: c = [0, 0, ?, ?]. x=2: a=0 -> run bit `0`: n=0.
-symbol: code(0): zeros `1` -> 0, c[2] = 0, k stays 0 (adapt(0,0)). x=3:
-a=0 -> run bit `1`... (the example continues in the test with the exact
-bit string and expected line `[0, 0, 0, -1]`).
+Worked example: width 4, first line, k = 0, s = 0, values [0, 0, 0, -1].
+x = 0: left is 0, run of the three zeros with 4 remaining: `1` (n = 1),
+`1` (n = 2, s = 1), `1` (n = 3, s = 2), `0` (stop; J[2] = 0; s = 1).
+x = 3: the last pixel never enters run mode: prediction 0, residual -1,
+code 1 at k = 0 is `0 1`. Stream: `1110 01`, padded to the byte `0xE4`.
 
-Test: `test_line_ll` (hand-built bitstreams for a 4-wide, 3-line band,
-including a run that reaches the line end).
+Test: `test_rice` (the example above, bit-exact; and round trips of random
+lines through an encoder written from this section).
 
 ### 5.7 High-pass band lines (every band except the base band)
 
@@ -459,8 +458,8 @@ the rule above degenerate to: run mode whenever the left pixel is 0; after
 a run, the shifted symbol with `k = adapt(k, v, 15)`; otherwise the plain
 symbol with `k = adapt(k, v, 15)`; `kp[x] = k` after every pixel.
 
-Test: `test_line_hf` (hand-built 5-wide, 3-line band exercising the
-memory rule, the shifted symbol and a run that ends the line).
+Test: `test_rice` (round trips of random high-pass lines, including runs
+that end a line and the shifted symbol).
 
 ## 6. Rounded-bits and per-subband partial modes
 
@@ -721,11 +720,10 @@ and are listed in DECISIONS.md as open.
 | test_container | 1, 2, 3 (synthetic v1 lossless and v2 lossy files, truncations, a size that does not add up) | done |
 | test_band_geometry | 4 (the rule against the observed table for widths 22..3999, the worked example) | done |
 | crxcheck -H on the corpora | 1 to 4 on real files | done: 15,307 + 64 files |
-| test_rice | 5.1-5.5 | planned (M3) |
-| test_line_ll | 5.6 | planned (M3) |
-| test_line_hf | 5.7 | planned (M3) |
+| test_rice | 5.1-5.7 (worked examples bit-exact; random round trips through an encoder written from section 5, both line decoders, escapes, runs) | done |
 | test_qp | 7 | planned (M4) |
 | test_wavelet | 8 | planned (M4) |
-| test_output | 9 | planned (M3) |
+| test_output | 9 | covered by crxcheck: every lossless public sample is exact (38 files, 20 bodies, one- and two-tile) |
 | test_partial | 10 | planned (M5) |
-| crxcheck on the corpora | all | running from M3 |
+| crxcheck on the corpora | all | lossless: 38 of 38 exact; lossy: milestone 4 |
+| mutate (fuzzer) | all, under ASan/UBSan | running from M3 |

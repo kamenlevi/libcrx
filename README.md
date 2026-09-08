@@ -4,9 +4,10 @@ A decoder for Canon's CRX raw codec, the sensor data inside CR3 files.
 Written from the format up, in C11, with no dependencies. Output is the
 sensor values, exact; demosaic and colour are the caller's business.
 
-Status: milestone 1. The harness exists and reports honestly that nothing
-decodes yet. See `docs/PLAN.md` for the milestones and `SPEC.md` for the
-format as we derive it.
+Status: milestone 3. Headers of every corpus file parse; every lossless
+public sample decodes bit-exact (38 files, 20 camera bodies). Lossy
+C-RAW is milestone 4. See `docs/PLAN.md` for the milestones and `SPEC.md`
+for the format as we derive it.
 
 ## Why
 
