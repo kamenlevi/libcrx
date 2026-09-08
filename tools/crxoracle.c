@@ -13,6 +13,7 @@
 
 int main(int argc, char **argv)
 {
+    setvbuf(stdout, NULL, _IOLBF, 0);
     if (argc < 2) { fprintf(stderr, "usage: crxoracle <file.cr3>...\n"); return 2; }
     int bad = 0;
     for (int i = 1; i < argc; i++) {

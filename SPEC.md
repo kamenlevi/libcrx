@@ -63,7 +63,7 @@ II says 6000x4000 while the coded image is 6188x4120).
 Rule: the image track is the CRX track whose CMP1 image area is largest.
 Every file seen has exactly one CMP1 track of each of two sizes.
 
-Test: `test_container` (an in-memory box tree with the four tracks).
+Test: `test_container` (a synthetic file built by `tests/mkcr3.h`).
 
 ## 2. CMP1: the image header
 
@@ -79,7 +79,7 @@ Offsets from the start of the box payload (after the 8-byte box header):
 | 24 | u8 | bit depth B | 14 |
 | 25 | u4,u4 | plane count P, CFA layout | 4; layout 0 (RGGB) for big images, 1 (GRBG) for the small track of some bodies |
 | 26 | u4,u4 | encoding type, wavelet levels N | type 0; N = 0 (RAW) or 3 (C-RAW) |
-| 27 | bit7, bit6 | more than one tile across, more than one tile down | across: 0 or 1; down: always 0 |
+| 27 | bit7, bit6 | more than one tile across, more than one tile down | across: 1 on lossy two-tile files, but 0 on lossless two-tile files (EOS M50, 250D, 850D); the decoder ignores the bit and derives the tile count from TW and W. Down: always 0 |
 | 28 | u32 | codestream header size S | 0x70 .. 0x438 (v1), 0x368 (v2) |
 | 32 | bit7 | extended header present | 0 |
 
@@ -95,7 +95,7 @@ rather than guessing (section 11).
 Worked example: bytes at offset 24 of the R6 Mark II header are `0e 40 03 00`:
 B = 14, P = 4, layout 0, type 0, N = 3, no extra tile columns.
 
-Test: `test_cmp1` (the EOS R and R6 Mark II headers as byte arrays).
+Test: `test_container` and the corpus headers check.
 
 ## 3. Codestream headers
 
@@ -154,8 +154,7 @@ data begins with its QP table (`QP size` bytes) followed by `extra` bytes,
 then the planes. Plane data follows plane data, subband follows subband,
 with no gaps, in header order.
 
-Test: `test_codestream_headers` (headers of the two corpus cameras and a
-two-tile pixls file).
+Test: `test_container` (v1 and v2 synthetic headers) and the corpus headers check.
 
 ## 4. Geometry: tiles, plane sizes, subband sizes
 
@@ -719,10 +718,9 @@ and are listed in DECISIONS.md as open.
 
 | test | sections | status |
 |---|---|---|
-| test_container | 1 | planned (M2) |
-| test_cmp1 | 2 | planned (M2) |
-| test_codestream_headers | 3 | planned (M2) |
-| test_band_geometry | 4 | planned (M2) |
+| test_container | 1, 2, 3 (synthetic v1 lossless and v2 lossy files, truncations, a size that does not add up) | done |
+| test_band_geometry | 4 (the rule against the observed table for widths 22..3999, the worked example) | done |
+| crxcheck -H on the corpora | 1 to 4 on real files | done: 15,307 + 64 files |
 | test_rice | 5.1-5.5 | planned (M3) |
 | test_line_ll | 5.6 | planned (M3) |
 | test_line_hf | 5.7 | planned (M3) |

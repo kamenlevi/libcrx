@@ -1,33 +1,42 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#include "crx.h"
+#include "crx_internal.h"
 #include <stdlib.h>
+#include <string.h>
 
-#define CRX_VERSION "0.0.0"
+#define CRX_VERSION "0.2.0"
 
-struct crx_decoder {
-    const uint8_t *bytes;
-    size_t len;
-    crx_info info;
-};
+static const uint8_t cfa_names[4][4] = { {0,1,1,2}, {1,0,2,1}, {1,2,0,1}, {2,1,1,0} };
 
 crx_status crx_open(const void *bytes, size_t len, crx_decoder **out)
 {
     if (!bytes || !out) return CRX_E_ARG;
     *out = NULL;
-    (void)len;
-    /* Milestone 2 puts the container walk and header parse here. */
-    return CRX_E_UNSUPPORTED;
+    crx_decoder *d = calloc(1, sizeof *d);
+    if (!d) return CRX_E_NOMEM;
+    d->bytes = bytes; d->len = len;
+    const uint8_t *cmp1; size_t cmp1_len; uint32_t track;
+    crx_status s = crx_find_image_track(d->bytes, len, &d->sample_off, &d->sample_size, &cmp1, &cmp1_len, &track);
+    if (s == CRX_OK) s = crx_parse_cmp1(d, cmp1, cmp1_len);
+    if (s == CRX_OK) s = crx_parse_codestream(d);
+    if (s != CRX_OK) { crx_close(d); return s; }
+    d->info.width = d->W; d->info.height = d->H;
+    d->info.bits = d->bits; d->info.planes = d->nplanes; d->info.levels = d->levels;
+    d->info.tiles_x = d->tiles_x; d->info.tiles_y = d->tiles_y;
+    memcpy(d->info.cfa, cfa_names[d->cfa], 4);
+    d->info.track = track;
+    *out = d;
+    return CRX_OK;
 }
 
-const crx_info *crx_get_info(const crx_decoder *d)
-{
-    return d ? &d->info : NULL;
-}
+const crx_info *crx_get_info(const crx_decoder *d) { return d ? &d->info : NULL; }
 
 size_t crx_output_size(const crx_decoder *d, unsigned level, uint32_t *w, uint32_t *h)
 {
-    if (!d || level > d->info.levels) return 0;
-    uint32_t ww = d->info.width >> level, hh = d->info.height >> level;
+    if (!d || level > d->levels) return 0;
+    uint32_t pw = 0, ph = 0;
+    for (uint32_t tx = 0; tx < d->tiles_x; tx++) pw += crx_ceil2n(d->tiles[tx].w, level);
+    for (uint32_t ty = 0; ty < d->tiles_y; ty++) ph += crx_ceil2n(d->tiles[ty * d->tiles_x].h, level);
+    uint32_t ww = 2 * pw, hh = 2 * ph;
     if (w) *w = ww;
     if (h) *h = hh;
     return (size_t)ww * hh;
@@ -36,12 +45,16 @@ size_t crx_output_size(const crx_decoder *d, unsigned level, uint32_t *w, uint32
 crx_status crx_decode(crx_decoder *d, unsigned level, uint16_t *dst, size_t stride, unsigned threads)
 {
     if (!d || !dst) return CRX_E_ARG;
-    (void)level; (void)stride; (void)threads;
-    return CRX_E_UNSUPPORTED;
+    if (level > d->levels) return CRX_E_ARG;
+    (void)stride; (void)threads;
+    return CRX_E_UNSUPPORTED;      /* milestone 3 */
 }
 
 void crx_close(crx_decoder *d)
 {
+    if (!d) return;
+    free(d->tiles);
+    free(d->plane_storage);
     free(d);
 }
 

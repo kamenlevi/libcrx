@@ -12,6 +12,7 @@
 
 int main(int argc, char **argv)
 {
+    setvbuf(stdout, NULL, _IOLBF, 0);
     unsigned level = 0, threads = 1; int reps = 5, verbose = 0, a = 1;
     for (; a < argc && argv[a][0] == '-'; a++) {
         if (!strcmp(argv[a], "-l") && a + 1 < argc) level = (unsigned)atoi(argv[++a]);
