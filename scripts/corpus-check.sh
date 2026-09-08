@@ -4,7 +4,7 @@
 # Env: CRX_JOBS (default 8), CRX_LOG (combined log path). Exit 0 only if everything passed.
 set -e
 paths=$1; oracle=$2; manifest=$3; shift 3
-bin=$(cd "$(dirname "$0")/.." && pwd)/build/crxcheck
+bin=${CRX_BIN:-$(cd "$(dirname "$0")/.." && pwd)/build/crxcheck}
 mflag=""; [ -n "$manifest" ] && mflag="-m $manifest"
 log=${CRX_LOG:-/tmp/crxcheck.$$.log}
 dir=$(mktemp -d)

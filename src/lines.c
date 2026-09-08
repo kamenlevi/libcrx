@@ -30,19 +30,16 @@ static inline int32_t sym_ll(crx_linestate *st, int32_t pred, const int32_t *p, 
     return out;
 }
 
-const int32_t *crx_line_ll(crx_linestate *st)
+static bool line_ll(crx_linestate *st, const int32_t *p, int32_t *c)
 {
-    if (st->corrupt) return NULL;
     uint32_t w = st->width;
-    int32_t *p = (st->line & 1) ? st->buf1 : st->buf0;   /* previous line */
-    int32_t *c = (st->line & 1) ? st->buf0 : st->buf1;   /* current line */
     if (st->line == 0) {
         c[-1] = 0;
         uint32_t x = 0;
         while (x < w) {
             if (x < w - 1 && c[(int32_t)x - 1] == 0) {        /* the last pixel never enters run mode */
                 uint32_t n = crx_run(&st->bits, &st->s, w - x);
-                if (n == UINT32_MAX) { st->corrupt = true; return NULL; }
+                if (n == UINT32_MAX) { st->corrupt = true; return false; }
                 for (uint32_t i = 0; i < n; i++) c[x + i] = 0;
                 x += n;
                 if (x == w) break;
@@ -62,7 +59,7 @@ const int32_t *crx_line_ll(crx_linestate *st)
                 c[x] = sym_ll(st, med(a, b, cc), p, x, true); x++;
             } else {
                 uint32_t n = crx_run(&st->bits, &st->s, w - x);
-                if (n == UINT32_MAX) { st->corrupt = true; return NULL; }
+                if (n == UINT32_MAX) { st->corrupt = true; return false; }
                 for (uint32_t i = 0; i < n; i++) c[x + i] = a;
                 x += n;
                 if (x < w) { c[x] = sym_ll(st, p[x], p, x, x < w - 1); x++; }
@@ -71,7 +68,18 @@ const int32_t *crx_line_ll(crx_linestate *st)
     }
     c[w] = c[w - 1] + 1;
     st->line++;
-    return c;
+    return true;
+}
+
+const int32_t *crx_line_ll(crx_linestate *st)
+{
+    if (st->corrupt) return NULL;
+    int32_t *p = (st->line & 1) ? st->buf1 : st->buf0, *c = (st->line & 1) ? st->buf0 : st->buf1;
+    return line_ll(st, p, c) ? c : NULL;
+}
+bool crx_line_ll_into(crx_linestate *st, const int32_t *prev, int32_t *cur)
+{
+    return !st->corrupt && line_ll(st, prev, cur);
 }
 
 /* SPEC 5.7 symbol with the per-column k memory. */
@@ -93,12 +101,9 @@ static inline void sym_hf_last(crx_linestate *st, int32_t *c, uint32_t x, bool s
     st->kp[x] = (int32_t)st->k;
 }
 
-const int32_t *crx_line_hf(crx_linestate *st)
+static bool line_hf(crx_linestate *st, const int32_t *p, int32_t *c)
 {
-    if (st->corrupt) return NULL;
     uint32_t w = st->width;
-    int32_t *p = (st->line & 1) ? st->buf1 : st->buf0;
-    int32_t *c = (st->line & 1) ? st->buf0 : st->buf1;
     c[-1] = 0;
     uint32_t x = 0;
     while (x < w - 1) {
@@ -106,7 +111,7 @@ const int32_t *crx_line_hf(crx_linestate *st)
             sym_hf(st, c, x, false); x++;
         } else {
             uint32_t n = crx_run(&st->bits, &st->s, w - x);
-            if (n == UINT32_MAX) { st->corrupt = true; return NULL; }
+            if (n == UINT32_MAX) { st->corrupt = true; return false; }
             for (uint32_t i = 0; i < n; i++) { c[x + i] = 0; st->kp[x + i] = 0; }
             x += n;
             if (x == w - 1) { sym_hf_last(st, c, x, true); x++; }
@@ -115,5 +120,16 @@ const int32_t *crx_line_hf(crx_linestate *st)
     }
     if (x == w - 1) sym_hf_last(st, c, x, false);
     st->line++;
-    return c;
+    return true;
+}
+
+const int32_t *crx_line_hf(crx_linestate *st)
+{
+    if (st->corrupt) return NULL;
+    int32_t *p = (st->line & 1) ? st->buf1 : st->buf0, *c = (st->line & 1) ? st->buf0 : st->buf1;
+    return line_hf(st, p, c) ? c : NULL;
+}
+bool crx_line_hf_into(crx_linestate *st, const int32_t *prev, int32_t *cur)
+{
+    return !st->corrupt && line_hf(st, prev, cur);
 }

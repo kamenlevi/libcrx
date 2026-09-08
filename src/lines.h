@@ -14,10 +14,15 @@ typedef struct crx_linestate {
     bool corrupt;
 } crx_linestate;
 
-/* `mem` must hold 3 * (width + 2) int32. */
+/* `mem` must hold 3 * (width + 2) int32: two line buffers and the k memory. */
 void crx_line_init(crx_linestate *st, const uint8_t *data, size_t len, uint32_t width, int32_t *mem);
 /* Decode the next line into st's current buffer; returns a pointer to pixel 0
  * of that line (valid until the next call), or NULL when corrupt. */
 const int32_t *crx_line_ll(crx_linestate *st);
 const int32_t *crx_line_hf(crx_linestate *st);
+/* The same, but decoding into caller rows: `cur` and `prev` point at pixel 0
+ * of rows that are valid from index -1 to width (padded). For the first line
+ * `prev` must point at a row of zeros (its pads included). */
+bool crx_line_ll_into(crx_linestate *st, const int32_t *prev, int32_t *cur);
+bool crx_line_hf_into(crx_linestate *st, const int32_t *prev, int32_t *cur);
 #endif

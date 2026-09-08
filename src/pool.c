@@ -1,0 +1,87 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+#include "pool.h"
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdatomic.h>
+
+struct crx_pool {
+    unsigned threads;             /* including the caller */
+    pthread_t *tids;              /* threads - 1 workers */
+    pthread_mutex_t mu;
+    pthread_cond_t cv_start, cv_done;
+    uint64_t generation;          /* bumped per run */
+    unsigned running;             /* workers still inside the current run */
+    int quit;
+    /* current run */
+    crx_task_fn fn; void *ctx; uint32_t n; atomic_uint next;
+};
+
+static void work(crx_pool *p)
+{
+    for (;;) {
+        uint32_t i = atomic_fetch_add(&p->next, 1);
+        if (i >= p->n) return;
+        p->fn(p->ctx, i);
+    }
+}
+
+static void *worker(void *arg)
+{
+    crx_pool *p = arg;
+    uint64_t seen = 0;
+    for (;;) {
+        pthread_mutex_lock(&p->mu);
+        while (p->generation == seen && !p->quit) pthread_cond_wait(&p->cv_start, &p->mu);
+        if (p->quit) { pthread_mutex_unlock(&p->mu); return NULL; }
+        seen = p->generation;
+        pthread_mutex_unlock(&p->mu);
+        work(p);
+        pthread_mutex_lock(&p->mu);
+        if (--p->running == 0) pthread_cond_signal(&p->cv_done);
+        pthread_mutex_unlock(&p->mu);
+    }
+}
+
+crx_pool *crx_pool_create(unsigned threads)
+{
+    if (threads < 1) threads = 1;
+    crx_pool *p = calloc(1, sizeof *p);
+    if (!p) return NULL;
+    p->threads = threads;
+    pthread_mutex_init(&p->mu, NULL);
+    pthread_cond_init(&p->cv_start, NULL);
+    pthread_cond_init(&p->cv_done, NULL);
+    if (threads > 1) {
+        p->tids = calloc(threads - 1, sizeof *p->tids);
+        for (unsigned i = 0; i < threads - 1; i++)
+            if (pthread_create(&p->tids[i], NULL, worker, p)) { p->threads = i + 1; break; }
+    }
+    return p;
+}
+
+void crx_pool_destroy(crx_pool *p)
+{
+    if (!p) return;
+    pthread_mutex_lock(&p->mu); p->quit = 1; pthread_cond_broadcast(&p->cv_start); pthread_mutex_unlock(&p->mu);
+    for (unsigned i = 0; i + 1 < p->threads; i++) pthread_join(p->tids[i], NULL);
+    free(p->tids);
+    pthread_mutex_destroy(&p->mu); pthread_cond_destroy(&p->cv_start); pthread_cond_destroy(&p->cv_done);
+    free(p);
+}
+
+unsigned crx_pool_threads(const crx_pool *p) { return p ? p->threads : 1; }
+
+void crx_pool_run(crx_pool *p, uint32_t n, crx_task_fn fn, void *ctx)
+{
+    if (n == 0) return;
+    if (!p || p->threads == 1 || n == 1) { for (uint32_t i = 0; i < n; i++) fn(ctx, i); return; }
+    pthread_mutex_lock(&p->mu);
+    p->fn = fn; p->ctx = ctx; p->n = n; atomic_store(&p->next, 0);
+    p->running = p->threads - 1; p->generation++;
+    pthread_cond_broadcast(&p->cv_start);
+    pthread_mutex_unlock(&p->mu);
+    work(p);
+    pthread_mutex_lock(&p->mu);
+    while (p->running) pthread_cond_wait(&p->cv_done, &p->mu);
+    pthread_mutex_unlock(&p->mu);
+}

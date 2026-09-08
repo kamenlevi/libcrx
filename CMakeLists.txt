@@ -19,7 +19,9 @@ if(CRX_SANITIZE)
   add_link_options(-fsanitize=address,undefined)
 endif()
 
-add_library(crx STATIC src/crx.c src/container.c src/headers.c src/rice.c src/lines.c src/decode.c src/wavelet.c src/qp.c)
+add_library(crx STATIC src/crx.c src/container.c src/headers.c src/rice.c src/lines.c src/decode.c src/wavelet.c src/qp.c src/pool.c)
+find_package(Threads REQUIRED)
+target_link_libraries(crx PUBLIC Threads::Threads)
 target_compile_options(crx PRIVATE -fwrapv)
 target_include_directories(crx PUBLIC include)
 
