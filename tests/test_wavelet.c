@@ -70,6 +70,29 @@ int main(void)
         if (memcmp(img, out, W * Hh * 4)) { printf("2-D mismatch %ux%u\n", W, Hh); fails++; }
         free(img); free(rowL); free(rowH); free(LL); free(LH); free(HL); free(HH); free(out); free(tmp);
     }
+    /* Strips must reproduce the whole-stage result exactly, for any split, with any flags
+       (flags only change which coefficients are read; both paths must agree). */
+    for (int t = 0; t < 60 && fails < 8; t++) {
+        uint32_t W = 1 + rnd(&seed) % 60, Hh = 1 + rnd(&seed) % 40;
+        bool left = rnd(&seed) & 1, right = rnd(&seed) & 1, top = rnd(&seed) & 1, bottom = rnd(&seed) & 1;
+        uint32_t wl = (W + 1) / 2 + (right ? 1 + (rnd(&seed) & 1) : 0), wh = W / 2 + (left ? 1 : 0) + (right ? 1 + (rnd(&seed) & 1) : 0);
+        uint32_t hl = (Hh + 1) / 2 + (bottom ? 1 + (rnd(&seed) & 1) : 0), hh = Hh / 2 + (top ? 1 : 0) + (bottom ? 1 + (rnd(&seed) & 1) : 0);
+        if (wh == 0) wh = 1; if (hh == 0) hh = 1;
+        int32_t *LL = malloc(wl * hl * 4), *HL = malloc(wh * hl * 4), *LH = malloc(wl * hh * 4), *HH = malloc(wh * hh * 4);
+        for (uint32_t i = 0; i < wl * hl; i++) LL[i] = (int32_t)(rnd(&seed) % 20000) - 10000;
+        for (uint32_t i = 0; i < wh * hl; i++) HL[i] = (int32_t)(rnd(&seed) % 2000) - 1000;
+        for (uint32_t i = 0; i < wl * hh; i++) LH[i] = (int32_t)(rnd(&seed) % 2000) - 1000;
+        for (uint32_t i = 0; i < wh * hh; i++) HH[i] = (int32_t)(rnd(&seed) % 2000) - 1000;
+        int32_t *o1 = malloc(W * Hh * 4), *o2 = malloc(W * Hh * 4), *tmp = malloc(crx_stage_tmp_size(W, hl, hh) * 4);
+        crx_synth_stage(LL, wl, hl, wl, HL, wh, hl, wh, LH, wl, hh, wl, HH, wh, hh, wh, left, right, top, bottom, o1, W, Hh, W, tmp);
+        crx_stage st = { LL, wl, hl, wl, HL, wh, hl, wh, LH, wl, hh, wl, HH, wh, hh, wh, left, right, top, bottom, o2, W, Hh, W, tmp };
+        uint32_t strip = 1 + rnd(&seed) % 9;
+        int32_t *scratch = malloc(crx_strip_scratch_size(W, strip) * 4);
+        memset(o2, 0x55, W * Hh * 4);
+        for (uint32_t y0 = 0; y0 < Hh; y0 += strip) crx_stage_strip(&st, y0, y0 + strip < Hh ? y0 + strip : Hh, scratch, NULL, NULL);
+        if (memcmp(o1, o2, W * Hh * 4)) { uint32_t i = 0; while (o1[i] == o2[i]) i++; printf("strip mismatch %ux%u flags %d%d%d%d strip %u at (%u,%u)\n", W, Hh, left, right, top, bottom, strip, i % W, i / W); fails++; }
+        free(LL); free(HL); free(LH); free(HH); free(o1); free(o2); free(tmp); free(scratch);
+    }
     /* Seam: a 20-sample line split in two tiles of 10; the left tile carries the neighbour's
        coefficients as right extras, the right tile carries one left extra. Both halves must equal the whole. */
     {

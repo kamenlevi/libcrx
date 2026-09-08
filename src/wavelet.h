@@ -37,4 +37,12 @@ typedef struct crx_stage {
 } crx_stage;
 void crx_stage_rows(const crx_stage *s, uint32_t r0, uint32_t r1);   /* r in [0, hl + hlh) */
 void crx_stage_cols(const crx_stage *s, uint32_t c0, uint32_t c1);   /* c in [0, m_w) */
+
+/* Strip form: compute output rows [y0, y1) alone, recomputing the few
+ * horizontal rows they need into `scratch` (crx_strip_scratch_size ints).
+ * Writes either int32 rows to s->out (when emit is NULL) or calls emit for
+ * each finished row with the row's int32 samples. */
+typedef void (*crx_row_sink)(void *ctx, uint32_t y, const int32_t *row);
+size_t crx_strip_scratch_size(uint32_t m_w, uint32_t strip_rows);
+void crx_stage_strip(const crx_stage *s, uint32_t y0, uint32_t y1, int32_t *scratch, crx_row_sink emit, void *ctx);
 #endif

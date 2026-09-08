@@ -9,6 +9,7 @@
  * per-file medians, and throughput in megapixels per second. */
 #include "common.h"
 #include "crx.h"
+#include <sys/resource.h>
 
 int main(int argc, char **argv)
 {
@@ -53,6 +54,13 @@ int main(int argc, char **argv)
         done++;
     }
     if (!done) { printf("crxbench: nothing decoded (%d files skipped)\n", skipped); return 1; }
+    struct rusage ru; getrusage(RUSAGE_SELF, &ru);
+#ifdef __APPLE__
+    double peak_mb = (double)ru.ru_maxrss / 1e6;
+#else
+    double peak_mb = (double)ru.ru_maxrss / 1e3;
+#endif
+    if (verbose) printf("peak RSS %.0f MB (includes the file bytes and the output buffer)\n", peak_mb);
     qsort(med, done, sizeof *med, cmp_double);
     printf("crxbench: level %u, %u thread%s, %d files (%d skipped): median %.2f ms, p90 %.2f ms, worst %.2f ms, %.0f Mpix/s, libcrx %s\n",
            level, threads, threads == 1 ? "" : "s", done, skipped,

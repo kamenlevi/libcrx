@@ -31,13 +31,15 @@ project runs). This is how the code is arranged and why.
    branches) and multiply each line by its quantisation step while it is
    still in cache. Bands are independent bitstreams, so with 40 or 80 of
    them the pool is busy; the wall time is the largest single band.
-3. **Phase 2, synthesis.** For each level from the coarsest down: the
-   horizontal pass over blocks of rows (low rows from LL and HL, high rows
-   from LH and HH), a barrier, then the vertical pass over blocks of
-   columns, row-oriented so it streams through memory. The output of a
-   stage is the low-pass input of the next.
-4. **Phase 3, emit.** Row blocks of the final plane go to the mosaic with
-   the median offset and the clamp.
+3. **Phase 2, synthesis in strips.** For each level from the coarsest
+   down, the stage's output rows are cut into strips of 32; a strip task
+   runs the horizontal synthesis for the few low and high rows it needs
+   (recomputing one or two halo rows at its edges) into per-worker scratch,
+   then the vertical lifting for its rows. Intermediate stages write the
+   next level's low-pass band; the final stage hands each finished row to
+   the emitter, which writes the mosaic with the median offset and the
+   clamp. No full-plane temporaries exist: memory is the bands plus one
+   intermediate band per plane.
 
 A level-n decode stops phase 2 after level n+1 and emits the intermediate
 band; phase 1 never touched the finer bands.
@@ -47,9 +49,8 @@ band; phase 1 never touched the finer bands.
 - **Whole bands in memory, not a rolling window.** The reference streams a
   few rows at a time to save memory. We trade memory for independence: a
   band task owns its buffer, needs no synchronisation, and the synthesis
-  passes become simple loops the compiler vectorises. Memory is the open
-  item of milestone 7 (fusing emit into the last column pass, strip-wise
-  synthesis).
+  passes become simple loops the compiler vectorises. The strips keep the
+  synthesis itself in cache and free of temporaries.
 - **Padded buffers.** The line decoders index `x - 1` and `x + 1` on the
   previous row; a pad column each side and a zero row above turn every
   boundary case into the general case, which is also how the format itself

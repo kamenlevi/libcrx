@@ -16,18 +16,19 @@ struct crx_pool {
     crx_task_fn fn; void *ctx; uint32_t n; atomic_uint next;
 };
 
-static void work(crx_pool *p)
+static void work(crx_pool *p, unsigned worker)
 {
     for (;;) {
         uint32_t i = atomic_fetch_add(&p->next, 1);
         if (i >= p->n) return;
-        p->fn(p->ctx, i);
+        p->fn(p->ctx, i, worker);
     }
 }
+typedef struct { crx_pool *p; unsigned idx; } worker_arg;
 
 static void *worker(void *arg)
 {
-    crx_pool *p = arg;
+    worker_arg *wa = arg; crx_pool *p = wa->p; unsigned idx = wa->idx; free(wa);
     uint64_t seen = 0;
     for (;;) {
         pthread_mutex_lock(&p->mu);
@@ -35,7 +36,7 @@ static void *worker(void *arg)
         if (p->quit) { pthread_mutex_unlock(&p->mu); return NULL; }
         seen = p->generation;
         pthread_mutex_unlock(&p->mu);
-        work(p);
+        work(p, idx);
         pthread_mutex_lock(&p->mu);
         if (--p->running == 0) pthread_cond_signal(&p->cv_done);
         pthread_mutex_unlock(&p->mu);
@@ -53,8 +54,10 @@ crx_pool *crx_pool_create(unsigned threads)
     pthread_cond_init(&p->cv_done, NULL);
     if (threads > 1) {
         p->tids = calloc(threads - 1, sizeof *p->tids);
-        for (unsigned i = 0; i < threads - 1; i++)
-            if (pthread_create(&p->tids[i], NULL, worker, p)) { p->threads = i + 1; break; }
+        for (unsigned i = 0; i < threads - 1; i++) {
+            worker_arg *wa = malloc(sizeof *wa); wa->p = p; wa->idx = i + 1;
+            if (pthread_create(&p->tids[i], NULL, worker, wa)) { free(wa); p->threads = i + 1; break; }
+        }
     }
     return p;
 }
@@ -74,13 +77,13 @@ unsigned crx_pool_threads(const crx_pool *p) { return p ? p->threads : 1; }
 void crx_pool_run(crx_pool *p, uint32_t n, crx_task_fn fn, void *ctx)
 {
     if (n == 0) return;
-    if (!p || p->threads == 1 || n == 1) { for (uint32_t i = 0; i < n; i++) fn(ctx, i); return; }
+    if (!p || p->threads == 1 || n == 1) { for (uint32_t i = 0; i < n; i++) fn(ctx, i, 0); return; }
     pthread_mutex_lock(&p->mu);
     p->fn = fn; p->ctx = ctx; p->n = n; atomic_store(&p->next, 0);
     p->running = p->threads - 1; p->generation++;
     pthread_cond_broadcast(&p->cv_start);
     pthread_mutex_unlock(&p->mu);
-    work(p);
+    work(p, 0);
     pthread_mutex_lock(&p->mu);
     while (p->running) pthread_cond_wait(&p->cv_done, &p->mu);
     pthread_mutex_unlock(&p->mu);

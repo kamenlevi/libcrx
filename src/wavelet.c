@@ -122,3 +122,82 @@ void crx_stage_cols(const crx_stage *s, uint32_t c0, uint32_t c1)
     int32_t *A = s->tmp, *B = s->tmp + (size_t)s->m_w * s->hl, *xm = B + (size_t)s->m_w * s->hlh;
     vertical(A, s->hl, B, s->hlh, s->top, s->bottom, s->out, s->m_w, s->m_h, s->so, xm, c0, c1);
 }
+
+/* ---- strip synthesis ------------------------------------------------------
+ * Vertical 5/3 on rows [y0, y1) needs low rows A[i] for the even outputs and
+ * one beyond, high rows B[i-1..i+1]. Each needed A/B row is one horizontal
+ * synthesis, computed here into scratch. Boundary rules as in vertical(). */
+size_t crx_strip_scratch_size(uint32_t m_w, uint32_t strip_rows)
+{
+    /* A rows: strip_rows/2 + 3, B rows: strip_rows/2 + 3, plus two output rows */
+    return (size_t)m_w * (strip_rows + 10);
+}
+
+void crx_stage_strip(const crx_stage *s, uint32_t y0, uint32_t y1, int32_t *scratch, crx_row_sink emit, void *ctx)
+{
+    uint32_t m_w = s->m_w, m_h = s->m_h;
+    if (m_h == 1) {
+        int32_t *row = scratch;
+        crx_synth_line(s->ll, s->wl, s->hlb, s->whl, s->left, s->right, row, m_w);
+        if (emit) emit(ctx, 0, row); else memcpy(s->out, row, m_w * sizeof *row);
+        return;
+    }
+    uint32_t rows_l = s->hl, rows_h = s->hlh;
+    uint32_t nbh = rows_h - (s->top ? 1 : 0);
+    /* index ranges: even outputs 2i for i in [ia0, ia1]; odd outputs 2i+1 need x[2i+2] -> even i+1 */
+    int32_t i_first = (int32_t)(y0 / 2), i_last = (int32_t)((y1 - 1) / 2);
+    int32_t ia1 = i_last + 1;                                  /* one even beyond for the last odd */
+    /* high rows needed: B[i-1 .. i] for evens, plus B[i] for odds; in own numbering (top extra is B row -1) */
+    int32_t ib0 = i_first - 1, ib1 = ia1;
+    /* clamp to what exists; mirrored/extra rows are handled by the accessors below */
+    int32_t nA = ia1 - i_first + 1, nB = ib1 - ib0 + 1;
+    int32_t *A = scratch, *B = A + (size_t)nA * m_w, *E = B + (size_t)nB * m_w;   /* E: two even rows (prev, cur) */
+    /* horizontal passes */
+    for (int32_t i = i_first; i <= ia1; i++) {
+        int32_t *dst = A + (size_t)(i - i_first) * m_w;
+        if ((uint32_t)i < rows_l) crx_synth_line(s->ll + (size_t)i * s->sll, s->wl, s->hlb + (size_t)i * s->shl, s->whl, s->left, s->right, dst, m_w);
+    }
+    for (int32_t j = ib0; j <= ib1; j++) {
+        int32_t *dst = B + (size_t)(j - ib0) * m_w;
+        int32_t r = j + (s->top ? 1 : 0);                      /* row in the LH/HH arrays */
+        if (j < 0 && !s->top) continue;                        /* mirror: handled by accessor */
+        if (r >= 0 && (uint32_t)r < rows_h) crx_synth_line(s->lhb + (size_t)r * s->slh, s->wlh, s->hhb + (size_t)r * s->shh, s->whh, s->left, s->right, dst, m_w);
+    }
+    #define AROW(i) (A + (size_t)((i) - i_first) * m_w)
+    /* high row accessor with mirror at both ends (own numbering j; j = -1 valid when top) */
+    #define BROWJ(j) (B + (size_t)((j) - ib0) * m_w)
+    /* even row 2i = A[i] - ((H(i-1) + H(i) + 2) >> 2), H(-1) = top ? extra : H(0); H(j >= nbh) = H(nbh-1) unless bottom extra exists */
+    int32_t *even_prev = E, *even_cur = E + m_w;
+    /* We need even rows for i in [i_first, ia1] but only those < m_h are output; x[m_h] (beyond) when m_h even and needed */
+    int32_t have_prev = 0;
+    for (int32_t i = i_first; i <= ia1; i++) {
+        uint32_t y = 2 * (uint32_t)i;
+        const int32_t *hp, *hc;
+        int32_t jp = i - 1, jc = i;
+        if (jp < 0) hp = s->top ? BROWJ(-1) : BROWJ(0);
+        else hp = BROWJ(jp < (int32_t)nbh ? jp : (int32_t)nbh - 1);
+        hc = BROWJ(jc < (int32_t)nbh ? jc : (int32_t)nbh - 1);
+        int32_t *ev = even_cur;
+        if (y < m_h || (y == m_h && !(m_h & 1) && s->bottom && (uint32_t)i < rows_l && (uint32_t)i < nbh)) {
+            const int32_t *lc = AROW(i);
+            for (uint32_t c = 0; c < m_w; c++) ev[c] = lc[c] - ((hp[c] + hc[c] + 2) >> 2);
+        } else if (y == m_h && !(m_h & 1)) {
+            memcpy(ev, even_prev, m_w * sizeof *ev);          /* mirror: x[m_h] = x[m_h - 2] */
+        } else break;
+        if (y < m_h && y >= y0 && y < y1) { if (emit) emit(ctx, y, ev); else memcpy(s->out + (size_t)y * s->so, ev, m_w * sizeof *ev); }
+        /* odd row 2i-1 = B[i-1] + ((x[2i-2] + x[2i]) >> 1), available once ev (x[2i]) exists */
+        if (have_prev) {
+            uint32_t yo = y - 1;
+            if (yo >= y0 && yo < y1 && yo < m_h) {
+                const int32_t *hb = BROWJ(i - 1);
+                int32_t *od = AROW(i - 1);                     /* reuse the consumed A row as output scratch */
+                for (uint32_t c = 0; c < m_w; c++) od[c] = hb[c] + ((even_prev[c] + ev[c]) >> 1);
+                if (emit) emit(ctx, yo, od); else memcpy(s->out + (size_t)yo * s->so, od, m_w * sizeof *od);
+            }
+        }
+        int32_t *t = even_prev; even_prev = even_cur; even_cur = t; have_prev = 1;
+        (void)hc;
+    }
+    #undef AROW
+    #undef BROWJ
+}

@@ -7,13 +7,14 @@
 #include <stdint.h>
 
 typedef struct crx_pool crx_pool;
-typedef void (*crx_task_fn)(void *ctx, uint32_t index);
+typedef void (*crx_task_fn)(void *ctx, uint32_t index, unsigned worker);
 
 /* `threads` = total workers including the caller (1 = no pool). */
 crx_pool *crx_pool_create(unsigned threads);
 void      crx_pool_destroy(crx_pool *p);
 unsigned  crx_pool_threads(const crx_pool *p);
-/* Runs fn(ctx, i) for i in [0, n) across the pool; returns when all are done. */
+/* Runs fn(ctx, i, worker) for i in [0, n) across the pool (worker in [0, threads));
+ * returns when all are done. */
 void      crx_pool_run(crx_pool *p, uint32_t n, crx_task_fn fn, void *ctx);
 
 /* Process-wide pool: created on first use with `threads`, recreated when a

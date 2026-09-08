@@ -23,7 +23,7 @@ crx_status crx_open(const void *bytes, size_t len, crx_decoder **out)
         uint32_t maxw = 0;
         for (uint32_t i = 0; i < d->tiles_x * d->tiles_y; i++) if (d->tiles[i].w > maxw) maxw = d->tiles[i].w;
         d->scratch_per_plane = 3 * ((size_t)maxw + 2);
-        d->scratch = malloc(d->scratch_per_plane * d->nplanes * sizeof *d->scratch);
+        d->scratch = malloc(d->scratch_per_plane * d->nplanes * d->tiles_x * d->tiles_y * sizeof *d->scratch);
         if (!d->scratch) s = CRX_E_NOMEM;
     }
     if (s != CRX_OK) { crx_close(d); return s; }
