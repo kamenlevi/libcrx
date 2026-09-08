@@ -21,6 +21,15 @@ static inline void crx_bits_init(crx_bits *b, const uint8_t *p, size_t len)
 
 static inline void crx_bits_refill(crx_bits *b)
 {
+#ifndef CRX_NO_REFILL32
+    if (b->n <= 32 && b->end - b->p >= 4) {
+        /* the common case: four bytes at once, big-endian */
+        uint32_t w = (uint32_t)b->p[0] << 24 | (uint32_t)b->p[1] << 16 | (uint32_t)b->p[2] << 8 | b->p[3];
+        b->p += 4;
+        b->acc |= (uint64_t)w << (32 - b->n);
+        b->n += 32;
+    }
+#endif
     while (b->n <= 56) {
         uint64_t byte = 0;
         if (b->p < b->end) byte = *b->p++; else b->overrun++;
@@ -48,7 +57,8 @@ static inline uint32_t crx_bits_zeros(crx_bits *b)
         if (b->n < 32) crx_bits_refill(b);
         if (b->acc) {
             unsigned z = (unsigned)__builtin_clzll(b->acc);
-            b->acc <<= z + 1; b->n -= z + 1;
+            b->acc = (z + 1 < 64) ? b->acc << (z + 1) : 0;    /* a shift by 64 is undefined */
+            b->n -= z + 1;
             return total + z;
         }
         total += b->n; b->n = 0;

@@ -62,6 +62,9 @@ message(STATUS "crxoracle (needs LibRaw): ${HAVE_LIBRAW}")
 
 add_executable(mutate fuzz/mutate.c)
 target_link_libraries(mutate crx)
+add_executable(mkseeds fuzz/mkseeds.c)
+target_link_libraries(mkseeds crx)
+add_test(NAME seeds COMMAND mkseeds ${CMAKE_BINARY_DIR})
 
 enable_testing()
 add_executable(test_sha256 tests/test_sha256.c)

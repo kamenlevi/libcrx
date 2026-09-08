@@ -27,6 +27,8 @@ int main(void)
     { unsigned s = 0; from_bits("1 1 1 0", &e); crx_bits_init(&b, e.p, e.n); CHECK(crx_run(&b, &s, 10) == 3 && s == 1); }
     { unsigned s = 8; from_bits("1 1 0 11", &e); crx_bits_init(&b, e.p, e.n); CHECK(crx_run(&b, &s, 10) == 8 && s == 8); }
     { unsigned s = 0; from_bits("0", &e); crx_bits_init(&b, e.p, e.n); CHECK(crx_run(&b, &s, 10) == 0 && s == 0); }
+    /* a one bit at the very bottom of a full 64-bit window: 63 zeros then 1, then 21 bits */
+    { uint8_t z[11] = {0}; z[7] = 1; z[8] = 0xAB; z[9] = 0xCD; z[10] = 0xE0; crx_bits_init(&b, z, 11); CHECK(crx_code(&b, 5) == 0x1579BC); }
     /* zeros() across many bytes and past the end */
     { uint8_t z[10] = {0}; z[9] = 1; crx_bits_init(&b, z, 10); CHECK(crx_bits_zeros(&b) == 79); }
     { uint8_t z[2] = {0}; crx_bits_init(&b, z, 2); uint32_t n = crx_bits_zeros(&b); CHECK(n >= 16 && crx_bits_overrun_bits(&b) > 0); }
