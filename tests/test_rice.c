@@ -6,13 +6,13 @@
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
 
-static void from_bits(const char *s, ebits *e) { memset(e, 0, sizeof *e); for (; *s; s++) if (*s == '0' || *s == '1') eb_bit(e, *s - '0'); eb_flush(e); }
+static void from_bits(const char *s, ebits *e) { free(e->p); memset(e, 0, sizeof *e); for (; *s; s++) if (*s == '0' || *s == '1') eb_bit(e, *s - '0'); eb_flush(e); }
 
 static uint32_t rnd(uint32_t *st) { *st = *st * 1103515245u + 12345u; return *st >> 8; }
 
 int main(void)
 {
-    ebits e; crx_bits b;
+    ebits e = {0}; crx_bits b;
     /* 5.2 examples */
     from_bits("1", &e); crx_bits_init(&b, e.p, e.n); CHECK(crx_code(&b, 0) == 0);
     from_bits("001 10", &e); crx_bits_init(&b, e.p, e.n); CHECK(crx_code(&b, 2) == 10);
@@ -34,7 +34,8 @@ int main(void)
     { enc_state st; enc_init(&st, 4); int32_t v[4] = {0, 0, 0, -1}; enc_line_ll(&st, v); eb_flush(&st.e);
       CHECK(st.e.n == 1 && st.e.p[0] == 0xE4);     /* run of 3: 1 1 1 0 ; then -1 at k=0: 0 1 ; padded: 1110 0100 */
       crx_linestate d; int32_t mem[3 * 6]; crx_line_init(&d, st.e.p, st.e.n, 4, mem);
-      const int32_t *out = crx_line_ll(&d); CHECK(out && out[0] == 0 && out[1] == 0 && out[2] == 0 && out[3] == -1); }
+      const int32_t *out = crx_line_ll(&d); CHECK(out && out[0] == 0 && out[1] == 0 && out[2] == 0 && out[3] == -1);
+      enc_free(&st); }
     /* Round trips: random images with flat runs, both decoders, many widths. */
     uint32_t seed = 7;
     for (int trial = 0; trial < 60 && fails < 5; trial++) {
@@ -59,8 +60,9 @@ int main(void)
             if (out) for (uint32_t x = 0; x < w; x++) if (out[x] != img[y * w + x]) { if (fails < 5) printf("trial %d (%s) w=%u h=%u mismatch at (%u,%u): %d vs %d\n", trial, hf ? "hf" : "ll", w, h, x, y, out[x], img[y*w+x]); fails++; break; }
         }
         CHECK(crx_bits_overrun_bits(&d.bits) == 0);
-        free(img); free(mem); free(st.e.p);
+        free(img); free(mem); enc_free(&st);
     }
+    free(e.p);
     printf(fails ? "rice: FAIL (%d)\n" : "rice: ok\n", fails);
     return fails != 0;
 }

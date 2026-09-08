@@ -59,6 +59,11 @@ static inline void enc_init(enc_state *st, uint32_t width)
     st->prev = (int32_t *)calloc(width + 2, 4) + 1; st->cur = (int32_t *)calloc(width + 2, 4) + 1; st->kp = (int32_t *)calloc(width + 2, 4) + 1;
 }
 
+static inline void enc_free(enc_state *st)
+{
+    free(st->prev - 1); free(st->cur - 1); free(st->kp - 1); free(st->e.p);
+}
+
 static inline int32_t enc_med(int32_t a, int32_t b, int32_t c)
 {
     int32_t mx = a > b ? a : b, mn = a < b ? a : b;
