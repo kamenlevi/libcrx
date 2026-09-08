@@ -24,7 +24,7 @@ int main(void)
     sha256_ctx c; uint8_t d[32]; sha256_init(&c);
     for (size_t i = 0; i < 1000000; i += 777) sha256_update(&c, m + i, i + 777 <= 1000000 ? 777 : 1000000 - i);
     sha256_final(&c, d);
-    char hex[65]; for (int i = 0; i < 32; i++) sprintf(hex + 2*i, "%02x", d[i]);
+    char hex[65]; for (int i = 0; i < 32; i++) snprintf(hex + 2*i, 3, "%02x", d[i]);
     if (strcmp(hex, "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")) { printf("streaming mismatch\n"); bad++; }
     free(m);
     printf(bad ? "sha256: FAIL\n" : "sha256: ok\n");
