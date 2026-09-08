@@ -77,7 +77,8 @@ int main(void)
         bool left = rnd(&seed) & 1, right = rnd(&seed) & 1, top = rnd(&seed) & 1, bottom = rnd(&seed) & 1;
         uint32_t wl = (W + 1) / 2 + (right ? 1 + (rnd(&seed) & 1) : 0), wh = W / 2 + (left ? 1 : 0) + (right ? 1 + (rnd(&seed) & 1) : 0);
         uint32_t hl = (Hh + 1) / 2 + (bottom ? 1 + (rnd(&seed) & 1) : 0), hh = Hh / 2 + (top ? 1 : 0) + (bottom ? 1 + (rnd(&seed) & 1) : 0);
-        if (wh == 0) wh = 1; if (hh == 0) hh = 1;
+        if (wh == 0) wh = 1;
+        if (hh == 0) hh = 1;
         int32_t *LL = malloc(wl * hl * 4), *HL = malloc(wh * hl * 4), *LH = malloc(wl * hh * 4), *HH = malloc(wh * hh * 4);
         for (uint32_t i = 0; i < wl * hl; i++) LL[i] = (int32_t)(rnd(&seed) % 20000) - 10000;
         for (uint32_t i = 0; i < wh * hl; i++) HL[i] = (int32_t)(rnd(&seed) % 2000) - 1000;
