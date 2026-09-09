@@ -259,7 +259,7 @@ static crx_status decode_lossy_all(crx_decoder *d, unsigned level, uint16_t *dst
 {
     unsigned N = d->levels;
     uint32_t ntiles = d->tiles_x * d->tiles_y, nplanes = ntiles * d->nplanes;
-    pp_ctx c = { d, level, dst, stride, NULL, nplanes, NULL, 0, 32, 512, NULL, NULL, NULL, 0, NULL, 0, 0 };
+    pp_ctx c = { d, level, dst, stride, NULL, nplanes, NULL, 0, 64, 512, NULL, NULL, NULL, 0, NULL, 0, 0 };
     uint32_t maxw_all = 0;
     c.pl = calloc(nplanes, sizeof *c.pl);
     if (!c.pl) return CRX_E_NOMEM;
