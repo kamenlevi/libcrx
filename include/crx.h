@@ -69,9 +69,16 @@ const crx_info *crx_get_info(const crx_decoder *d);
 size_t crx_output_size(const crx_decoder *d, unsigned level, uint32_t *w, uint32_t *h);
 
 /* Decode into dst, row-major, one uint16 per photosite, rows `stride` pixels
- * apart. Level as for crx_output_size. `threads` 0 means one thread.
- * A level > 0 result is, by definition, the LL band of the exact integer
- * wavelet analysis of the level 0 result, repeated `level` times. */
+ * apart (stride >= the level's width). Level as for crx_output_size.
+ * `threads` is the number of workers including the caller; 0 or 1 decodes
+ * on the calling thread alone. Workers live in process-wide pools, one per
+ * distinct count ever requested (at most four; further counts reuse the
+ * largest); several threads may each decode their own decoder at the same
+ * time (runs on one pool take turns). A decoder object must not be used by two threads at once.
+ * A level > 0 result is, by definition, the low-pass band of the exact
+ * integer 5/3 analysis of the level 0 result, applied `level` times, per
+ * tile in the tile's own frame (SPEC section 10). Errors leave dst
+ * partially written. */
 crx_status crx_decode(crx_decoder *d, unsigned level, uint16_t *dst, size_t stride, unsigned threads);
 
 void crx_close(crx_decoder *d);

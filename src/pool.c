@@ -7,7 +7,7 @@
 struct crx_pool {
     unsigned threads;             /* including the caller */
     pthread_t *tids;              /* threads - 1 workers */
-    pthread_mutex_t mu;
+    pthread_mutex_t mu, run_mu;           /* run_mu: one run at a time; concurrent decoders queue */
     pthread_cond_t cv_start, cv_done;
     uint64_t generation;          /* bumped per run */
     unsigned running;             /* workers still inside the current run */
@@ -50,6 +50,7 @@ crx_pool *crx_pool_create(unsigned threads)
     if (!p) return NULL;
     p->threads = threads;
     pthread_mutex_init(&p->mu, NULL);
+    pthread_mutex_init(&p->run_mu, NULL);
     pthread_cond_init(&p->cv_start, NULL);
     pthread_cond_init(&p->cv_done, NULL);
     if (threads > 1) {
@@ -68,7 +69,7 @@ void crx_pool_destroy(crx_pool *p)
     pthread_mutex_lock(&p->mu); p->quit = 1; pthread_cond_broadcast(&p->cv_start); pthread_mutex_unlock(&p->mu);
     for (unsigned i = 0; i + 1 < p->threads; i++) pthread_join(p->tids[i], NULL);
     free(p->tids);
-    pthread_mutex_destroy(&p->mu); pthread_cond_destroy(&p->cv_start); pthread_cond_destroy(&p->cv_done);
+    pthread_mutex_destroy(&p->mu); pthread_mutex_destroy(&p->run_mu); pthread_cond_destroy(&p->cv_start); pthread_cond_destroy(&p->cv_done);
     free(p);
 }
 
@@ -78,6 +79,7 @@ void crx_pool_run(crx_pool *p, uint32_t n, crx_task_fn fn, void *ctx)
 {
     if (n == 0) return;
     if (!p || p->threads == 1 || n == 1) { for (uint32_t i = 0; i < n; i++) fn(ctx, i, 0); return; }
+    pthread_mutex_lock(&p->run_mu);
     pthread_mutex_lock(&p->mu);
     p->fn = fn; p->ctx = ctx; p->n = n; atomic_store(&p->next, 0);
     p->running = p->threads - 1; p->generation++;
@@ -87,24 +89,31 @@ void crx_pool_run(crx_pool *p, uint32_t n, crx_task_fn fn, void *ctx)
     pthread_mutex_lock(&p->mu);
     while (p->running) pthread_cond_wait(&p->cv_done, &p->mu);
     pthread_mutex_unlock(&p->mu);
+    pthread_mutex_unlock(&p->run_mu);
 }
 
-/* ---- shared pool ---- */
+/* ---- shared pools: one per requested thread count, never destroyed ---- */
+#define POOL_SLOTS 4
 static pthread_mutex_t shared_mu = PTHREAD_MUTEX_INITIALIZER;
-static crx_pool *shared_pool;
+static crx_pool *shared_pools[POOL_SLOTS];
 
 crx_pool *crx_pool_shared(unsigned threads)
 {
     if (threads < 1) threads = 1;
     pthread_mutex_lock(&shared_mu);
-    if (!shared_pool || shared_pool->threads != threads) {
-        crx_pool *old = shared_pool;
-        shared_pool = crx_pool_create(threads);
-        pthread_mutex_unlock(&shared_mu);
-        crx_pool_destroy(old);            /* callers hold no reference across decodes */
-        return shared_pool;
+    crx_pool *p = NULL; int free_slot = -1;
+    for (int i = 0; i < POOL_SLOTS; i++) {
+        if (shared_pools[i] && shared_pools[i]->threads == threads) { p = shared_pools[i]; break; }
+        if (!shared_pools[i] && free_slot < 0) free_slot = i;
     }
-    crx_pool *p = shared_pool;
+    if (!p) {
+        p = crx_pool_create(threads);
+        if (p && free_slot >= 0) shared_pools[free_slot] = p;
+        else if (p) { /* more than POOL_SLOTS distinct counts: fall back to the largest existing pool */
+            crx_pool_destroy(p); p = shared_pools[0];
+            for (int i = 1; i < POOL_SLOTS; i++) if (shared_pools[i]->threads > p->threads) p = shared_pools[i];
+        }
+    }
     pthread_mutex_unlock(&shared_mu);
     return p;
 }
