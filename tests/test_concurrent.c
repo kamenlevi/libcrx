@@ -46,5 +46,12 @@ int main(int argc, char **argv)
     for (int i = 0; i < 2 * nfiles; i++) pthread_create(&tids[i], NULL, run, &jobs[i]);
     for (int i = 0; i < 2 * nfiles; i++) { pthread_join(tids[i], NULL); bad += jobs[i].bad; }
     printf(bad ? "concurrent: FAIL (%d jobs)\n" : "concurrent: ok (%d jobs x 200 decodes)\n", bad ? bad : 2 * nfiles);
+    /* Each file's bytes are shared by its two jobs: freed once, with the first. */
+    for (int i = 0; i < 2 * nfiles; i++) {
+        free(jobs[i].ref);
+        if (i % 2 == 0) free((void *)jobs[i].bytes);
+    }
+    free(jobs);
+    free(tids);
     return bad != 0;
 }
