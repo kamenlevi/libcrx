@@ -110,9 +110,10 @@ Estimates are for the engineering; the corpus gate decides when each is over.
   decodes are verified, and on a quiet machine a 24 MP C-RAW takes 13.5 ms
   full and 5.1 ms at half size (targets 25 and 10).
 - **7: under way.** Done: lossless and lossy fuzzers, about three hours each,
-  clean; a concurrency test; threading notes in the API. Open: CI green on
-  all four platforms (the Linux jobs failed on one line from 2026-09-09 to
-  2026-10-12), the full corpus re-checked on the release commit (the last
+  clean; a concurrency test; threading notes in the API; CI green on all four
+  platforms with and without sanitizers (2026-10-12: the Linux jobs had failed
+  since 2026-09-09, on a fuzz tool's line and on a test that leaked its own
+  inputs). Open: the full corpus re-checked on the release commit (the last
   full run predates the two pool commits, 23bd61e and 2e924fc, which changed
   how synthesis is split into strips), fuzzing for 24 hours, workspace memory
   at 2.7x the output against a target of 2x, the API frozen, the v1 tag.
