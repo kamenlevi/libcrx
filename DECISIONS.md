@@ -54,3 +54,20 @@ Dated, newest first. A decision stays until a later entry replaces it.
 - **2026-09-08 · Name and home.** `libcrx`, github.com/kamenlevi/libcrx,
   Apache-2.0, C11, a Swift wrapper later in OjoX.
 - **2026-09-08 · Project approved** by Kamen: plan in `docs/PLAN.md`.
+- **2026-10-01 · OjoX integration is long-term and opt-in** (Kamen). No merge
+  into OjoX's main before about two months of testing, because testing that
+  it never decodes wrong and never disturbs the app takes that long. Even
+  merged, it stays experimental: a switch the user turns on, never the
+  default. The integration branch is rebuilt on OjoX's latest main and kept
+  there, rebased every time main moves, so that the final merge has no
+  conflicts and, switched off, changes nothing. During testing every decode
+  is checked against LibRaw in the background. A Mac mini may take over the
+  long runs (corpus, fuzzing) later.
+- **2026-10-01 · The pink-highlight fix is not part of this project.** The
+  pink in blown skies came from OjoX's own develop step, which both LibRaw's
+  unpack and ours feed, so it was fixed on OjoX's main on its own (branch
+  `crx-prep`). Whatever libcrx's integration does, it develops through that
+  same code.
+- **2026-10-12 · Tag after the overnight check.** v0.2.0 is tagged on the
+  commit the full private corpus, the public samples and the partial-decode
+  sample were last checked on, and not before.

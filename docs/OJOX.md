@@ -1,5 +1,35 @@
 # Integration into OjoX (milestone 8)
 
+## Status and direction, 2026-10-12
+
+- **A prototype exists:** OjoX branch `crx`, four commits from 2026-09-09.
+  It is step 1 below: LibRaw opens the file for metadata, libcrx unpacks, and
+  the self-test finds the developed pictures byte-identical to LibRaw's (60 of
+  60). In the app the whole half-size develop went from about 46 ms to about
+  31 ms. It sits on a main hundreds of commits old and is rebuilt, not merged.
+- **Kamen's direction (2026-10-01, `DECISIONS.md`):** long-term, no merge before
+  about two months of testing, and always an opt-in experiment, never the
+  default. The branch lives on OjoX's latest main and is rebased whenever main
+  moves.
+- **What the rebuild changes from the prototype:**
+  - Off by default, behind a switch. Switched off, the app runs main's code
+    and nothing else; the prototype was on whenever RAW decoding was.
+  - Every decode is checked against LibRaw in the background during the
+    testing period, not one in a hundred: libcrx's develop is shown at once,
+    LibRaw unpacks the same file when the machine is idle, and a difference
+    replaces the picture with LibRaw's, drops the cached copy and is logged.
+  - Live RAW while stepping only when LibRaw is the chosen engine: the
+    prototype ignored Apple's, and with it selected a held key would ask for
+    a slow Apple develop on every step.
+  - The develop it feeds is main's, which since `crx-prep` balances white by
+    the smallest multiplier and clips blown highlights in a table. The
+    prototype's own copy of that loop does not clip; a rebase keeps main's.
+- **End-to-end speed:** the level-0 swap gives the app about 1.5x, because
+  LibRaw still opens every file and the develop still runs. Getting closer to
+  the decoder's own 43 against 5 ms needs the level-1 path below and reading
+  the metadata ourselves.
+
+
 What the viewer does today: LibRaw opens the CR3 (metadata), unpacks the
 sensor data (43 ms on 4 threads for a 24 MP C-RAW), and OjoX's own develop
 stage (RawDevelop.swift: black, white balance, camera matrix, curve) makes

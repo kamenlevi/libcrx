@@ -2,7 +2,9 @@
 
 A plan for a decoder that reads Canon's CR3 sensor data faster than anything
 that exists, proven exact, built like a product team would build it. Written
-to be read cold. Nothing here is built yet.
+to be read cold. It was written before any of it was built; where each
+milestone stands is in "Status" under section 5, and what was decided
+since is in `DECISIONS.md`.
 
 ## 1. Mission and the numbers that define "done"
 
@@ -102,6 +104,23 @@ Estimates are for the engineering; the corpus gate decides when each is over.
 | 7 | Hardening and release | fuzz corpus grown, truncated and odd-size files, API frozen, documentation, tagged v1 | all gates green together, on all four platforms |
 | 8 | Integration | OjoX uses it behind LibRaw as fallback, with a background self-check that develops one file in a hundred both ways and reports any difference | OjoX battery at parity or better; self-check silent for a week |
 
+### Status, 2026-10-12
+
+- **0 to 6: done** (2026-09-08 and 09). The whole corpus decodes exact, partial
+  decodes are verified, and on a quiet machine a 24 MP C-RAW takes 13.5 ms
+  full and 5.1 ms at half size (targets 25 and 10).
+- **7: under way.** Done: lossless and lossy fuzzers, about three hours each,
+  clean; a concurrency test; threading notes in the API. Open: CI green on
+  all four platforms (the Linux jobs failed on one line from 2026-09-09 to
+  2026-10-12), the full corpus re-checked on the release commit (the last
+  full run predates the two pool commits, 23bd61e and 2e924fc, which changed
+  how synthesis is split into strips), fuzzing for 24 hours, workspace memory
+  at 2.7x the output against a target of 2x, the API frozen, the v1 tag.
+- **8: prototype only.** OjoX branch `crx` (2026-09-09) swaps LibRaw's unpack
+  for libcrx and develops byte-identical pictures. It sits on an old main and
+  is to be rebuilt on the latest one as an opt-in experiment; see
+  `docs/OJOX.md` and `DECISIONS.md` (2026-10-01).
+
 Engineering estimate, evenings and weekends: 0 and 1 in the first week, 2
 and 3 in the following two, 4 in two more, 5 in one, 6 in two, 7 and 8 in
 one. Six to nine weeks. The app loses nothing while it runs: LibRaw stays.
@@ -133,5 +152,5 @@ one. Six to nine weeks. The app loses nothing while it runs: LibRaw stays.
 
 ## 8. Decision log
 
-- 2026-09-08: project proposed, awaiting approval. Own repository, Apache-2.0, clean room,
-  LibRaw and rawspeed as oracles, C with a Swift wrapper. Name to be chosen.
+Kept in `DECISIONS.md` at the top of the repository. The first entry was
+this plan's proposal on 2026-09-08; it was approved the same day.

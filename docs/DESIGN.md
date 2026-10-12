@@ -32,7 +32,7 @@ project runs). This is how the code is arranged and why.
    still in cache. Bands are independent bitstreams, so with 40 or 80 of
    them the pool is busy; the wall time is the largest single band.
 3. **Phase 2, synthesis in strips.** For each level from the coarsest
-   down, the stage's output rows are cut into strips of 32; a strip task
+   down, the stage's output rows are cut into strips of 64; a strip task
    runs the horizontal synthesis for the few low and high rows it needs
    (recomputing one or two halo rows at its edges) into per-worker scratch,
    then the vertical lifting for its rows. Intermediate stages write the
@@ -68,7 +68,12 @@ band; phase 1 never touched the finer bands.
 ## Threads
 
 `crx_decode(..., threads)` asks for that many workers including the
-caller. The pool is process-wide and rebuilt only when a different count
-is requested. Decoding two files at once from two threads is safe as long
-as they use the same count (they share the pool); the decoder object
-itself is not shared between threads.
+caller. Pools are process-wide, one per distinct count (at most four),
+created on first use and never destroyed; threads park between decodes.
+Several decodes can run at once from different threads: each registers
+its tasks as a run in its pool's slot table, workers take tasks from any
+active run, and a caller works only on its own run, so per-run scratch
+stays private. A viewer's three concurrent develops therefore share the
+machine task by task instead of queueing. The decoder object itself is
+not shared between threads; `tests/test_concurrent.c` decodes from four
+threads with mixed counts and compares every result.

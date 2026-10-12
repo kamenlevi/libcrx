@@ -74,7 +74,8 @@ size_t crx_output_size(const crx_decoder *d, unsigned level, uint32_t *w, uint32
  * on the calling thread alone. Workers live in process-wide pools, one per
  * distinct count ever requested (at most four; further counts reuse the
  * largest); several threads may each decode their own decoder at the same
- * time (runs on one pool take turns). A decoder object must not be used by two threads at once.
+ * time, and their runs share one pool's workers task by task. A decoder
+ * object must not be used by two threads at once.
  * A level > 0 result is, by definition, the low-pass band of the exact
  * integer 5/3 analysis of the level 0 result, applied `level` times, per
  * tile in the tile's own frame (SPEC section 10). Errors leave dst

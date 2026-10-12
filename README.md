@@ -4,11 +4,12 @@ A decoder for Canon's CRX raw codec, the sensor data inside CR3 files.
 Written from the format up, in C11, with no dependencies. Output is the
 sensor values, exact; demosaic and colour are the caller's business.
 
-Status: milestone 6. Every file of both corpora (15,290 private, 64
-public; lossless and C-RAW, both codec versions, one and two tiles)
-decodes bit-exact to LibRaw. Partial decodes are defined and verified.
-On an 18-core M5 Pro a 24 MP C-RAW decodes in 19 ms full and 6 ms at half
-size, against LibRaw's 43 ms. See `docs/PLAN.md` for the milestones,
+Status: milestones 0 to 6 done, 7 (hardening and release) under way.
+Every file of both corpora (15,290 private, 64 public; lossless and C-RAW,
+both codec versions, one and two tiles) decodes bit-exact to LibRaw.
+Partial decodes are defined and verified. On an 18-core M5 Pro, measured
+on a quiet machine, a 24 MP C-RAW decodes in 13.5 ms full and 5.1 ms at
+half size, against LibRaw's 43 ms. See `docs/PLAN.md` for the milestones,
 `SPEC.md` for the format, `docs/DESIGN.md` for the code, `docs/BENCH.md`
 for numbers.
 

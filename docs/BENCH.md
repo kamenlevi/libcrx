@@ -9,8 +9,8 @@ same R6 Mark II files, 4 OpenMP threads: 43 ms.
 | 2026-09-09 | M4/M5 | 1 thread, no optimisation, all bands decoded at every level | 209 ms | 140 ms | 124 ms | 228 ms | 146 ms | first correct version |
 | 2026-09-09 | M6 step 1 | 1 thread; row-oriented wavelet, fused dequant, band skipping | 213 ms | 58 ms | 18 ms | | | measured under load |
 | 2026-09-09 | M6 step 2 | 16 threads; bands, stage rows/columns and emit in parallel; shared pool, workspace cache | 19.4 ms | 6.4 ms | 3.5 ms | 18.7 ms | | idle machine; 1 thread full: 164 ms |
-
 | 2026-09-09 | M6 step 3 | 16 threads; strip synthesis with fused emit, four-byte refill | 16.1 ms | 6.0 ms | | 16.6 ms | | best of several runs; see the note on noise |
+| 2026-09-09 | 2e924fc | 16 threads, `crxbench -m` (minimum over repetitions), quiet machine; runs share the pool | 13.5 ms | 5.1 ms | 2.9 ms | 12.0 ms | 3.4 ms | first quiet-machine numbers; inside OjoX 16 to 17 ms a decode, 31 ms for the whole half-size develop |
 
 Phase breakdown after step 3, R6 Mark II, 16 threads, full decode: setup
 and QP map 1.6 ms, band decoding 10.0 ms (bounded by the largest single
@@ -21,5 +21,5 @@ Peak RSS of crxbench 211 MB, of which the file is 24 MB and the output
 Noise. After hours of sustained load (corpus runs, three fuzzers) the
 same binary measured 16 ms and 28 ms for the same files minutes apart;
 the machine throttles. Comparisons must interleave A and B and take the
-minimum over repetitions, on a cool machine. crxbench should grow a
-`--min` mode before the next optimisation round.
+minimum over repetitions, on a cool machine: `crxbench -m` reports the
+minimum.
