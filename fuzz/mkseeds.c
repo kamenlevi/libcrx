@@ -52,7 +52,8 @@ int main(int argc, char **argv)
                 if (out[r * W + cc] != v) mism++;
             }
             printf("tiny-lossless: %zu bytes, %s\n", f.n, mism ? "MISMATCH" : "round trip exact");
-            if (mism) bad = 1; crx_close(d);
+            if (mism) bad = 1;
+            crx_close(d);
         }
         for (int p = 0; p < 4; p++) enc_free(&st[p]);
         free(img); free(out); free(cs.p); free(f.p); free(data.p);
