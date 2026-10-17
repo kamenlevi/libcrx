@@ -113,9 +113,9 @@ Estimates are for the engineering; the corpus gate decides when each is over.
   clean; a concurrency test; threading notes in the API; CI green on all four
   platforms with and without sanitizers (2026-10-12: the Linux jobs had failed
   since 2026-09-09, on a fuzz tool's line and on a test that leaked its own
-  inputs). Open: the full corpus re-checked on the release commit (the last
-  full run predates the two pool commits, 23bd61e and 2e924fc, which changed
-  how synthesis is split into strips), fuzzing for 24 hours, workspace memory
+  inputs); the full corpus re-checked and **v0.2.0 tagged** on cf23b26
+  (2026-10-17: 15,290, 64 and 403 of 403 exact; the re-check first caught a
+  level-N partial-decode bug, see `DECISIONS.md`). Open: fuzzing for 24 hours, workspace memory
   at 2.7x the output against a target of 2x, the API frozen, the v1 tag.
 - **8: prototype only.** OjoX branch `crx` (2026-09-09) swaps LibRaw's unpack
   for libcrx and develops byte-identical pictures. It sits on an old main and

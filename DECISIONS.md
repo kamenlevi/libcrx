@@ -71,3 +71,11 @@ Dated, newest first. A decision stays until a later entry replaces it.
 - **2026-10-12 · Tag after the overnight check.** v0.2.0 is tagged on the
   commit the full private corpus, the public samples and the partial-decode
   sample were last checked on, and not before.
+- **2026-10-17 · v0.2.0 tagged on cf23b26.** The check on the commit before it
+  found 47 of 403 partial decodes wrong at the coarsest level: both decode
+  paths skipped the base band there, so the output was whatever the buffer
+  held. It had passed on 2026-09-09 only because malloc returned the previous
+  level's buffer with the band still in it; with malloc filling new memory
+  with junk (MallocPreScribble) the old build fails every file. Full-size
+  decodes were never affected. Lesson kept: a pass on uninitialised memory
+  proves nothing, so run the partial check with MallocPreScribble=1 too.
