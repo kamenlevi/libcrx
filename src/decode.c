@@ -142,7 +142,12 @@ static crx_status decode_lossy_plane(crx_decoder *d, const crx_tile *t, uint32_t
     for (unsigned k = 0; k < d->nbands && s == CRX_OK; k++) {
         const crx_band *b = &pl->bands[k];
         unsigned lvl = k == 0 ? N : N - (k - 1) / 3;              /* band index -> wavelet level */
-        if (lvl <= level) continue;                                /* not needed for this output level */
+        /* A detail band of a level at or below the output's is not needed. The
+         * base band (k == 0) always is: it IS the level-N output. Skipping it
+         * when level == N left the output to whatever the buffer held, which
+         * passed the partial check only while malloc handed back the buffer
+         * of the level-(N-1) decode run just before. */
+        if (k != 0 && lvl <= level) continue;
         double ta = trace_on ? now_ms() : 0;
         s = decode_band(d, b, k == 0 && pl->partial, lvl, qm, bands[k], linemem);
         if (trace_on) { double tb = now_ms(); tdec += tb - ta; fprintf(stderr, "  band %u %ux%u decode+dequant %.2f ms (%.0f Msym/s)\n", k, b->width, b->height, tb - ta, (double)b->width * b->height / 1e3 / (tb - ta)); }
@@ -319,7 +324,7 @@ static crx_status decode_lossy_all(crx_decoder *d, unsigned level, uint16_t *dst
     c.nband_tasks = 0;
     for (unsigned k = d->nbands; k-- > 0;) {
         unsigned lvl = k == 0 ? N : N - (k - 1) / 3;
-        if (lvl <= level) continue;
+        if (k != 0 && lvl <= level) continue;   /* the base band is every level's (see decode_lossy_plane) */
         for (uint32_t p = 0; p < nplanes; p++) c.band_task[c.nband_tasks++] = (p << 4) | k;
     }
     if (trace_on) { double T1 = now_ms(); fprintf(stderr, "setup+qmaps %.2f ms\n", T1 - T0); T0 = T1; }
